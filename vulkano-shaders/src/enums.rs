@@ -15,7 +15,7 @@ use parse::ParseError;
 macro_rules! enumeration {
     ($(typedef enum $unused:ident { $($elem:ident = $value:expr,)+ } $name:ident;)+) => (
         $(
-            #[derive(Debug, Clone)]
+            #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
             pub enum $name {
                 $($elem),+
             }
@@ -547,4 +547,82 @@ enumeration! {
         CapabilityStorageImageWriteWithoutFormat = 56,
         CapabilityMultiViewport = 57,
     } Capability;
+}
+
+impl Capability {
+    /// Returns the name of the Vulkan something that corresponds to an `OpCapability`.
+    ///
+    /// Returns `None` if irrelevant.
+    // TODO: this function is a draft, as the actual names may not be the same
+    pub fn name(self) -> Option<&'static str> {
+        use self::Capability::*;
+        match self {
+            CapabilityMatrix => None,        // always supported
+            CapabilityShader => None,        // always supported
+            CapabilityGeometry => Some("geometry_shader"),
+            CapabilityTessellation => Some("tessellation_shader"),
+            CapabilityAddresses => panic!(), // not supported
+            CapabilityLinkage => panic!(),   // not supported
+            CapabilityKernel => panic!(),    // not supported
+            CapabilityVector16 => panic!(),  // not supported
+            CapabilityFloat16Buffer => panic!(), // not supported
+            CapabilityFloat16 => panic!(),   // not supported
+            CapabilityFloat64 => Some("shader_f3264"),
+            CapabilityInt64 => Some("shader_int64"),
+            CapabilityInt64Atomics => panic!(),  // not supported
+            CapabilityImageBasic => panic!(),    // not supported
+            CapabilityImageReadWrite => panic!(),    // not supported
+            CapabilityImageMipmap => panic!(),   // not supported
+            CapabilityPipes => panic!(), // not supported
+            CapabilityGroups => panic!(),    // not supported
+            CapabilityDeviceEnqueue => panic!(), // not supported
+            CapabilityLiteralSampler => panic!(),    // not supported
+            CapabilityAtomicStorage => panic!(), // not supported
+            CapabilityInt16 => Some("shader_int16"),
+            CapabilityTessellationPointSize =>
+                Some("shader_tessellation_and_geometry_point_size"),
+            CapabilityGeometryPointSize =>
+                Some("shader_tessellation_and_geometry_point_size"),
+            CapabilityImageGatherExtended => Some("shader_image_gather_extended"),
+            CapabilityStorageImageMultisample =>
+                Some("shader_storage_image_multisample"),
+            CapabilityUniformBufferArrayDynamicIndexing =>
+                Some("shader_uniform_buffer_array_dynamic_indexing"),
+            CapabilitySampledImageArrayDynamicIndexing =>
+                Some("shader_sampled_image_array_dynamic_indexing"),
+            CapabilityStorageBufferArrayDynamicIndexing =>
+                Some("shader_storage_buffer_array_dynamic_indexing"),
+            CapabilityStorageImageArrayDynamicIndexing =>
+                Some("shader_storage_image_array_dynamic_indexing"),
+            CapabilityClipDistance => Some("shader_clip_distance"),
+            CapabilityCullDistance => Some("shader_cull_distance"),
+            CapabilityImageCubeArray => Some("image_cube_array"),
+            CapabilitySampleRateShading => Some("sample_rate_shading"),
+            CapabilityImageRect => panic!(), // not supported
+            CapabilitySampledRect => panic!(),   // not supported
+            CapabilityGenericPointer => panic!(),    // not supported
+            CapabilityInt8 => panic!(),  // not supported
+            CapabilityInputAttachment => None,       // always supported
+            CapabilitySparseResidency => Some("shader_resource_residency"),
+            CapabilityMinLod => Some("shader_resource_min_lod"),
+            CapabilitySampled1D => None,        // always supported
+            CapabilityImage1D => None,        // always supported
+            CapabilitySampledCubeArray => Some("image_cube_array"),
+            CapabilitySampledBuffer => None,         // always supported
+            CapabilityImageBuffer => None,        // always supported
+            CapabilityImageMSArray => Some("shader_storage_image_multisample"),
+            CapabilityStorageImageExtendedFormats =>
+                Some("shader_storage_image_extended_formats"),
+            CapabilityImageQuery => None,        // always supported
+            CapabilityDerivativeControl => None,        // always supported
+            CapabilityInterpolationFunction => Some("sample_rate_shading"),
+            CapabilityTransformFeedback => panic!(), // not supported
+            CapabilityGeometryStreams => panic!(),   // not supported
+            CapabilityStorageImageReadWithoutFormat =>
+                Some("shader_storage_image_read_without_format"),
+            CapabilityStorageImageWriteWithoutFormat =>
+                Some("shader_storage_image_write_without_format"),
+            CapabilityMultiViewport => Some("multi_viewport"),
+        }
+    }
 }

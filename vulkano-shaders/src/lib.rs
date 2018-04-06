@@ -26,6 +26,9 @@ mod enums;
 mod parse;
 mod spec_consts;
 mod structs;
+mod shader;
+
+use shader::Shader;
 
 pub fn build_glsl_shaders<'a, I>(shaders: I)
     where I: IntoIterator<Item = (&'a str, ShaderType)>
@@ -59,19 +62,22 @@ pub fn build_glsl_shaders<'a, I>(shaders: I)
             Ok(compiled) => compiled,
             Err(message) => panic!("{}\nfailed to compile shader", message),
         };
+
         let output = reflect("Shader", content).unwrap();
         write!(file_output, "{}", output).unwrap();
     }
 }
 
-pub fn reflect<R>(name: &str, mut spirv: R) -> Result<String, Error>
+pub fn reflect<R>(name: &str, mut spirv_reader: R) -> Result<String, Error>
     where R: Read
 {
     let mut data = Vec::new();
-    spirv.read_to_end(&mut data)?;
+    spirv_reader.read_to_end(&mut data)?;
 
     // now parsing the document
-    let doc = parse::parse_spirv(&data)?;
+    let spirv = parse::parse_spirv(&data)?;
+
+    let shader = Shader::from_spirv(spirv);
 
     let mut output = String::new();
     output.push_str(
@@ -143,18 +149,16 @@ impl {name} {{
         ));
 
         // checking whether each required capability is enabled in the vulkan device
-        for i in doc.instructions.iter() {
-            if let &parse::Instruction::Capability(ref cap) = i {
-                if let Some(cap) = capability_name(cap) {
-                    output.push_str(&format!(
-                        r#"
-                        if !device.enabled_features().{cap} {{
-                            panic!("capability {{:?}} not enabled", "{cap}")  // FIXME: error
-                            //return Err(CapabilityNotEnabled);
-                        }}"#,
-                        cap = cap
-                    ));
-                }
+        for capability in &shader.capabilities {
+            if let Some(capability) = capability.name() {
+                output.push_str(&format!(
+                    r#"
+                    if !device.enabled_features().{capability} {{
+                        panic!("capability {{:?}} not enabled", "{capability}")  // FIXME: error
+                        //return Err(CapabilityNotEnabled);
+                    }}"#,
+                    capability = capability
+                ));
             }
         }
 
@@ -183,9 +187,9 @@ impl {name} {{
 
         // writing one method for each entry point of this module
         let mut outside_impl = String::new();
-        for instruction in doc.instructions.iter() {
+        for instruction in shader.spirv.instructions.iter() {
             if let &parse::Instruction::EntryPoint { .. } = instruction {
-                let (outside, entry_point) = entry_point::write_entry_point(&doc, instruction);
+                let (outside, entry_point) = entry_point::write_entry_point(&shader.spirv, instruction);
                 output.push_str(&entry_point);
                 outside_impl.push_str(&outside);
             }
@@ -202,14 +206,14 @@ impl {name} {{
 
         // struct definitions
         output.push_str("pub mod ty {");
-        output.push_str(&structs::write_structs(&doc));
+        output.push_str(&structs::write_structs(&shader.spirv));
         output.push_str("}");
 
         // descriptor sets
-        output.push_str(&descriptor_sets::write_descriptor_sets(&doc));
+        output.push_str(&descriptor_sets::write_descriptor_sets(&shader.spirv));
 
         // specialization constants
-        output.push_str(&spec_consts::write_specialization_constants(&doc));
+        output.push_str(&spec_consts::write_specialization_constants(&shader.spirv));
     }
 
     Ok(output)
@@ -456,79 +460,4 @@ fn is_builtin(doc: &parse::Spirv, id: u32) -> bool {
     }
 
     false
-}
-
-/// Returns the name of the Vulkan something that corresponds to an `OpCapability`.
-///
-/// Returns `None` if irrelevant.
-// TODO: this function is a draft, as the actual names may not be the same
-fn capability_name(cap: &enums::Capability) -> Option<&'static str> {
-    match *cap {
-        enums::Capability::CapabilityMatrix => None,        // always supported
-        enums::Capability::CapabilityShader => None,        // always supported
-        enums::Capability::CapabilityGeometry => Some("geometry_shader"),
-        enums::Capability::CapabilityTessellation => Some("tessellation_shader"),
-        enums::Capability::CapabilityAddresses => panic!(), // not supported
-        enums::Capability::CapabilityLinkage => panic!(),   // not supported
-        enums::Capability::CapabilityKernel => panic!(),    // not supported
-        enums::Capability::CapabilityVector16 => panic!(),  // not supported
-        enums::Capability::CapabilityFloat16Buffer => panic!(), // not supported
-        enums::Capability::CapabilityFloat16 => panic!(),   // not supported
-        enums::Capability::CapabilityFloat64 => Some("shader_f3264"),
-        enums::Capability::CapabilityInt64 => Some("shader_int64"),
-        enums::Capability::CapabilityInt64Atomics => panic!(),  // not supported
-        enums::Capability::CapabilityImageBasic => panic!(),    // not supported
-        enums::Capability::CapabilityImageReadWrite => panic!(),    // not supported
-        enums::Capability::CapabilityImageMipmap => panic!(),   // not supported
-        enums::Capability::CapabilityPipes => panic!(), // not supported
-        enums::Capability::CapabilityGroups => panic!(),    // not supported
-        enums::Capability::CapabilityDeviceEnqueue => panic!(), // not supported
-        enums::Capability::CapabilityLiteralSampler => panic!(),    // not supported
-        enums::Capability::CapabilityAtomicStorage => panic!(), // not supported
-        enums::Capability::CapabilityInt16 => Some("shader_int16"),
-        enums::Capability::CapabilityTessellationPointSize =>
-            Some("shader_tessellation_and_geometry_point_size"),
-        enums::Capability::CapabilityGeometryPointSize =>
-            Some("shader_tessellation_and_geometry_point_size"),
-        enums::Capability::CapabilityImageGatherExtended => Some("shader_image_gather_extended"),
-        enums::Capability::CapabilityStorageImageMultisample =>
-            Some("shader_storage_image_multisample"),
-        enums::Capability::CapabilityUniformBufferArrayDynamicIndexing =>
-            Some("shader_uniform_buffer_array_dynamic_indexing"),
-        enums::Capability::CapabilitySampledImageArrayDynamicIndexing =>
-            Some("shader_sampled_image_array_dynamic_indexing"),
-        enums::Capability::CapabilityStorageBufferArrayDynamicIndexing =>
-            Some("shader_storage_buffer_array_dynamic_indexing"),
-        enums::Capability::CapabilityStorageImageArrayDynamicIndexing =>
-            Some("shader_storage_image_array_dynamic_indexing"),
-        enums::Capability::CapabilityClipDistance => Some("shader_clip_distance"),
-        enums::Capability::CapabilityCullDistance => Some("shader_cull_distance"),
-        enums::Capability::CapabilityImageCubeArray => Some("image_cube_array"),
-        enums::Capability::CapabilitySampleRateShading => Some("sample_rate_shading"),
-        enums::Capability::CapabilityImageRect => panic!(), // not supported
-        enums::Capability::CapabilitySampledRect => panic!(),   // not supported
-        enums::Capability::CapabilityGenericPointer => panic!(),    // not supported
-        enums::Capability::CapabilityInt8 => panic!(),  // not supported
-        enums::Capability::CapabilityInputAttachment => None,       // always supported
-        enums::Capability::CapabilitySparseResidency => Some("shader_resource_residency"),
-        enums::Capability::CapabilityMinLod => Some("shader_resource_min_lod"),
-        enums::Capability::CapabilitySampled1D => None,        // always supported
-        enums::Capability::CapabilityImage1D => None,        // always supported
-        enums::Capability::CapabilitySampledCubeArray => Some("image_cube_array"),
-        enums::Capability::CapabilitySampledBuffer => None,         // always supported
-        enums::Capability::CapabilityImageBuffer => None,        // always supported
-        enums::Capability::CapabilityImageMSArray => Some("shader_storage_image_multisample"),
-        enums::Capability::CapabilityStorageImageExtendedFormats =>
-            Some("shader_storage_image_extended_formats"),
-        enums::Capability::CapabilityImageQuery => None,        // always supported
-        enums::Capability::CapabilityDerivativeControl => None,        // always supported
-        enums::Capability::CapabilityInterpolationFunction => Some("sample_rate_shading"),
-        enums::Capability::CapabilityTransformFeedback => panic!(), // not supported
-        enums::Capability::CapabilityGeometryStreams => panic!(),   // not supported
-        enums::Capability::CapabilityStorageImageReadWithoutFormat =>
-            Some("shader_storage_image_read_without_format"),
-        enums::Capability::CapabilityStorageImageWriteWithoutFormat =>
-            Some("shader_storage_image_write_without_format"),
-        enums::Capability::CapabilityMultiViewport => Some("multi_viewport"),
-    }
 }
