@@ -15,6 +15,16 @@ use is_builtin;
 use location_decoration;
 use name_from_id;
 
+use enums::ExecutionModel;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct EntryPoint {
+    pub execution_model: ExecutionModel,
+    pub id:              u32,
+    pub interface:       Vec<u32>,
+    pub name:            String,
+}
+
 pub fn write_entry_point(doc: &parse::Spirv, instruction: &parse::Instruction) -> (String, String) {
     let (execution, id, ep_name, interface) = match instruction {
         &parse::Instruction::EntryPoint {

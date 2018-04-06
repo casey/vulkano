@@ -9,6 +9,7 @@
 
 use parse::{Instruction, Spirv};
 use enums::Capability;
+use entry_point::EntryPoint;
 
 use std::collections::BTreeSet;
 
@@ -19,6 +20,8 @@ pub struct Shader {
     /// use these capabilities during codegen, and codegen should be
     /// deterministic, we store them in a sorted BTreeSet instead of a HashSet.
     pub capabilities: BTreeSet<Capability>,
+
+    pub entry_points: BTreeSet<EntryPoint>,
 }
 
 impl Shader {
@@ -32,9 +35,23 @@ impl Shader {
             }
         }).collect();
 
+        let entry_points = spirv.instructions.iter().filter_map(|instruction| {
+            if let &Instruction::EntryPoint{ref execution, id, ref name, ref interface} = instruction {
+                Some(EntryPoint{
+                    execution_model: *execution,
+                    id:              id,
+                    interface:       interface.clone(),
+                    name:            name.clone(),
+                })
+            } else {
+                None
+            }
+        }).collect();
+
         Shader {
             spirv,
             capabilities,
+            entry_points,
         }
     }
 }
@@ -43,15 +60,15 @@ impl Shader {
 mod test {
     use std::io::prelude::*;
 
+    use enums::ExecutionModel;
     use glsl_to_spirv::{compile, ShaderType};
     use parse::parse_spirv;
 
     use super::*;
-
     const PASSTHROUGH_VERTEX_SHADER: &str = include_str!("../tests/passthrough-vertex-shader.glsl");
 
     #[test]
-    fn simple_capabilities() {
+    fn simple_shader() {
         let mut spirv_output_file = compile(PASSTHROUGH_VERTEX_SHADER, ShaderType::Vertex)
             .expect("failed to compile tests/passthrough-vertex-shader.glsl");
 
@@ -64,8 +81,15 @@ mod test {
 
         let shader = Shader::from_spirv(spirv);
 
-        let capabilities = shader.capabilities.iter().cloned().collect::<Vec<_>>();
+        let capabilities = shader.capabilities.into_iter().collect::<Vec<_>>();
+        let entry_points = shader.entry_points.into_iter().collect::<Vec<_>>();
 
         assert_eq!(capabilities, &[Capability::CapabilityShader]);
+        assert_eq!(entry_points, &[EntryPoint {
+            execution_model: ExecutionModel::ExecutionModelVertex,
+            id:              4,
+            name:            "main".to_string(),
+            interface:       vec![13, 17],
+        }]);
     }
 }
