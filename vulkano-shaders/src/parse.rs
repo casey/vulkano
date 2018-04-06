@@ -398,7 +398,7 @@ mod test {
 
     #[test]
     fn test() {
-        let data = include_bytes!("../tests/frag.spv");
-        parse::parse_spirv(data).unwrap();
+        let data = include_bytes!("../data/frag.spv");
+        println!("{:#?}", parse::parse_spirv(data).unwrap());
     }
 }
