@@ -67,19 +67,19 @@ mod test {
     use parse::parse_spirv;
 
     use super::*;
-    const PASSTHROUGH_VERTEX_SHADER: &str = include_str!("../tests/passthrough-vertex-shader.glsl");
+    const PASSTHROUGH_VERTEX_SHADER: &str = include_str!("../data/passthrough-vertex-shader.glsl");
 
     #[test]
     fn simple_shader() {
         let mut spirv_output_file = compile(PASSTHROUGH_VERTEX_SHADER, ShaderType::Vertex)
-            .expect("failed to compile tests/passthrough-vertex-shader.glsl");
+            .expect("failed to compile data/passthrough-vertex-shader.glsl");
 
         let mut spirv_bytes = Vec::new();
         spirv_output_file.read_to_end(&mut spirv_bytes)
             .expect("failed to read SPIR-V output file");
 
         let spirv = parse_spirv(&spirv_bytes)
-            .expect("failed to parse SPIR-V from tests/passthrough-vertex-shader.glsl");
+            .expect("failed to parse SPIR-V from data/passthrough-vertex-shader.glsl");
 
         let shader = Shader::from_spirv(spirv);
 

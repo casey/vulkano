@@ -10,3 +10,7 @@ categories = ["rendering::graphics-api"]
 
 [dependencies]
 glsl-to-spirv = { version = "0.1.2", path = "../glsl-to-spirv" }
+search = "0.0.2"
+
+[dev-dependencies]
+pretty_assertions = "0.5.1"

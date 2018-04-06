@@ -468,11 +468,21 @@ mod tests {
     #[test]
     fn test_refactor_is_noop() {
         let content = glsl_to_spirv::compile(
-            include_str!("../tests/example-shader.glsl"),
+            include_str!("../data/example-shader.glsl"),
             glsl_to_spirv::ShaderType::Fragment
         ).unwrap();
-        let output = reflect("Shader", content).unwrap();
 
-        assert_eq!(output, include_str!("../tests/pre-refactor-shader.rs"));
+        let actual = reflect("Shader", content).unwrap();
+        let actual_lines = actual.lines().collect::<Vec<_>>();
+        let expected_lines = include_str!("../data/pre-refactor-shader.rs").lines().collect::<Vec<_>>();
+
+        assert_eq!(actual_lines.len(), expected_lines.len());
+
+        for (i, (actual, expected)) in actual_lines.iter().zip(expected_lines.iter()).enumerate() {
+            if actual != expected {
+                println!("line {} has changed", i);
+                assert_eq!(actual, expected);
+            }
+        }
     }
 }
