@@ -25,19 +25,8 @@ pub struct EntryPoint {
     pub name:            String,
 }
 
-pub fn write_entry_point(doc: &parse::Spirv, instruction: &parse::Instruction) -> (String, String) {
-    let (execution, id, ep_name, interface) = match instruction {
-        &parse::Instruction::EntryPoint {
-            ref execution,
-            id,
-            ref name,
-            ref interface,
-            ..
-        } => {
-            (execution, id, name, interface)
-        },
-        _ => unreachable!(),
-    };
+pub fn write_entry_point(doc: &parse::Spirv, entry_point: &EntryPoint) -> (String, String) {
+    let &EntryPoint{execution_model: execution, id, name: ref ep_name, ref interface} = entry_point;
 
     let capitalized_ep_name: String = ep_name
         .chars()
@@ -49,8 +38,8 @@ pub fn write_entry_point(doc: &parse::Spirv, instruction: &parse::Instruction) -
     let interface_structs =
         write_interface_structs(doc,
                                 &capitalized_ep_name,
-                                interface,
-                                match *execution {
+                                &interface,
+                                match execution {
                                     enums::ExecutionModel::ExecutionModelTessellationControl =>
                                         true,
                                     enums::ExecutionModel::ExecutionModelTessellationEvaluation =>
@@ -58,7 +47,7 @@ pub fn write_entry_point(doc: &parse::Spirv, instruction: &parse::Instruction) -
                                     enums::ExecutionModel::ExecutionModelGeometry => true,
                                     _ => false,
                                 },
-                                match *execution {
+                                match execution {
                                     enums::ExecutionModel::ExecutionModelTessellationControl =>
                                         true,
                                     _ => false,
@@ -71,14 +60,14 @@ pub fn write_entry_point(doc: &parse::Spirv, instruction: &parse::Instruction) -
     };
 
     let (ty, f_call) = {
-        if let enums::ExecutionModel::ExecutionModelGLCompute = *execution {
+        if let enums::ExecutionModel::ExecutionModelGLCompute = execution {
             (format!("::vulkano::pipeline::shader::ComputeEntryPoint<{}, Layout>",
                      spec_consts_struct),
              format!("compute_entry_point(::std::ffi::CStr::from_ptr(NAME.as_ptr() as *const _), \
                       Layout(ShaderStages {{ compute: true, .. ShaderStages::none() }}))"))
 
         } else {
-            let ty = match *execution {
+            let ty = match execution {
                 enums::ExecutionModel::ExecutionModelVertex => {
                     "::vulkano::pipeline::shader::GraphicsShaderType::Vertex".to_owned()
                 },
@@ -141,7 +130,7 @@ pub fn write_entry_point(doc: &parse::Spirv, instruction: &parse::Instruction) -
                 enums::ExecutionModel::ExecutionModelKernel => panic!("Kernels are not supported"),
             };
 
-            let stage = match *execution {
+            let stage = match execution {
                 enums::ExecutionModel::ExecutionModelVertex => {
                     "ShaderStages { vertex: true, .. ShaderStages::none() }"
                 },

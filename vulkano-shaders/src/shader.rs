@@ -16,11 +16,13 @@ use std::collections::BTreeSet;
 pub struct Shader {
     /// The shader's parsed SPIR-V bytecode
     pub spirv: Spirv,
+
     /// The device capabilities required by this shader. Since we will
     /// use these capabilities during codegen, and codegen should be
     /// deterministic, we store them in a sorted BTreeSet instead of a HashSet.
     pub capabilities: BTreeSet<Capability>,
 
+    /// Entry Points to the shader binary
     pub entry_points: BTreeSet<EntryPoint>,
 }
 
