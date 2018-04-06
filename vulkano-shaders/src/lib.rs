@@ -459,3 +459,20 @@ fn is_builtin(doc: &parse::Spirv, id: u32) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use glsl_to_spirv;
+    use super::*;
+
+    #[test]
+    fn test_refactor_is_noop() {
+        let content = glsl_to_spirv::compile(
+            include_str!("../tests/example-shader.glsl"),
+            glsl_to_spirv::ShaderType::Fragment
+        ).unwrap();
+        let output = reflect("Shader", content).unwrap();
+
+        assert_eq!(output, include_str!("../tests/pre-refactor-shader.rs"));
+    }
+}
