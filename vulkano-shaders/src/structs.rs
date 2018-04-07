@@ -12,22 +12,22 @@ use std::mem;
 use enums;
 use parse;
 
+use shader::Shader;
+
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq)]
+pub struct Struct {
+    pub id:           u32,
+    pub member_types: Vec<u32>,
+}
+
 /// Translates all the structs that are contained in the SPIR-V document as Rust structs.
-pub fn write_structs(doc: &parse::Spirv) -> String {
+pub fn write_structs(shader: &Shader) -> String {
     let mut result = String::new();
 
-    for instruction in &doc.instructions {
-        match *instruction {
-            parse::Instruction::TypeStruct {
-                result_id,
-                ref member_types,
-            } => {
-                let (s, _) = write_struct(doc, result_id, member_types);
-                result.push_str(&s);
-                result.push_str("\n");
-            },
-            _ => (),
-        }
+    for spirv_struct in &shader.structs {
+        let (s, _) = write_struct(&shader.spirv, spirv_struct.id, &spirv_struct.member_types);
+        result.push_str(&s);
+        result.push_str("\n");
     }
 
     result
@@ -42,10 +42,9 @@ struct Member {
 
 impl Member {
     fn declaration_text(&self) -> String {
-        let offset = match self.offset {
-            Some(o) => format!("/* offset: {} */", o),
-            _ => "".to_owned(),
-        };
+        let offset = self.offset
+            .map(|o| format!("/* offset: {} */", o))
+            .unwrap_or_else(|| String::new());
         format!("    pub {}: {} {}", self.name, self.value, offset)
     }
     fn copy_text(&self) -> String {
@@ -72,7 +71,7 @@ fn write_struct(doc: &parse::Spirv, struct_id: u32, members: &[u32]) -> (String,
         let (ty, rust_size, rust_align) = type_from_id(doc, member);
         let member_name = ::member_name_from_id(doc, struct_id, num as u32);
 
-        // Ignore the whole struct is a member is built in, which includes
+        // Ignore the whole struct if a member is built in, which includes
         // `gl_Position` for example.
         if is_builtin_member(doc, struct_id, num as u32) {
             return (String::new(), None); // TODO: is this correct? shouldn't it return a correct struct but with a flag or something?

@@ -12,6 +12,40 @@ use std::mem;
 use enums;
 use parse;
 
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq)]
+pub struct SpecializationConstant {
+    constant_id:    u32,
+    name:           String,
+    rust_alignment: usize,
+    rust_size:      usize,
+    rust_ty:        String,
+    kind:           SpecializationConstantKind,
+}
+
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub enum SpecializationConstantKind {
+    True,
+    False,
+    Scalar{default_value: Vec<u32>},
+    Composite{default_value: Vec<u32>},
+}
+
+fn default_value(specialization_constant: &SpecializationConstant) -> String {
+    match specialization_constant.kind {
+        SpecializationConstantKind::True => "1u32".to_string(),
+        SpecializationConstantKind::False => "0u32".to_string(),
+        SpecializationConstantKind::Scalar{ref default_value} |
+        SpecializationConstantKind::Composite{ref default_value} => format!(
+            "unsafe {{ ::std::mem::transmute([{}]) }}",
+            default_value
+                .iter()
+                .map(|x| format!("{}u32", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
 /// Returns true if the document has specialization constants.
 pub fn has_specialization_constants(doc: &parse::Spirv) -> bool {
     for instruction in doc.instructions.iter() {
@@ -30,54 +64,37 @@ pub fn has_specialization_constants(doc: &parse::Spirv) -> bool {
 /// Writes the `SpecializationConstants` struct that contains the specialization constants and
 /// implements the `Default` and the `vulkano::pipeline::shader::SpecializationConstants` traits.
 pub fn write_specialization_constants(doc: &parse::Spirv) -> String {
-    struct SpecConst {
-        name: String,
-        constant_id: u32,
-        rust_ty: String,
-        rust_size: usize,
-        rust_alignment: usize,
-        default_value: String,
-    }
-
     let mut spec_consts = Vec::new();
 
     for instruction in doc.instructions.iter() {
-        let (type_id, result_id, default_value) = match instruction {
+        let (type_id, result_id, kind) = match instruction {
             &parse::Instruction::SpecConstantTrue {
                 result_type_id,
                 result_id,
             } => {
-                (result_type_id, result_id, "1u32".to_string())
+                (result_type_id, result_id, SpecializationConstantKind::True)
             },
             &parse::Instruction::SpecConstantFalse {
                 result_type_id,
                 result_id,
             } => {
-                (result_type_id, result_id, "0u32".to_string())
+                (result_type_id, result_id, SpecializationConstantKind::False)
             },
             &parse::Instruction::SpecConstant {
                 result_type_id,
                 result_id,
                 ref data,
             } => {
-                let data = data.iter()
-                    .map(|d| d.to_string() + "u32")
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let def_val = format!("unsafe {{ ::std::mem::transmute([{}]) }}", data);
-                (result_type_id, result_id, def_val)
+                let kind = SpecializationConstantKind::Scalar{default_value: data.clone()};
+                (result_type_id, result_id, kind)
             },
             &parse::Instruction::SpecConstantComposite {
                 result_type_id,
                 result_id,
                 ref data,
             } => {
-                let data = data.iter()
-                    .map(|d| d.to_string() + "u32")
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let def_val = format!("unsafe {{ ::std::mem::transmute([{}]) }}", data);
-                (result_type_id, result_id, def_val)
+                let kind = SpecializationConstantKind::Composite{default_value: data.clone()};
+                (result_type_id, result_id, kind)
             },
             _ => continue,
         };
@@ -100,14 +117,18 @@ pub fn write_specialization_constants(doc: &parse::Spirv) -> String {
             .next()
             .expect("Found a specialization constant with no SpecId decoration");
 
-        spec_consts.push(SpecConst {
+        spec_consts.push(SpecializationConstant {
                              name: ::name_from_id(doc, result_id),
                              constant_id,
                              rust_ty,
                              rust_size,
                              rust_alignment,
-                             default_value,
+                             kind,
                          });
+    }
+
+    for sc in &spec_consts {
+        println!("{:?}", sc);
     }
 
     let map_entries = {
@@ -169,7 +190,7 @@ unsafe impl SpecConstsTrait for SpecializationConstants {{
             .join(", "),
         def_vals = spec_consts
             .iter()
-            .map(|c| format!("{}: {}", c.name, c.default_value))
+            .map(|c| format!("{}: {}", c.name, default_value(c)))
             .collect::<Vec<_>>()
             .join(", "),
         num_map_entries = map_entries.len(),

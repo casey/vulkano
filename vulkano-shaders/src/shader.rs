@@ -10,6 +10,8 @@
 use parse::{Instruction, Spirv};
 use enums::Capability;
 use entry_point::EntryPoint;
+use spec_consts::SpecializationConstant;
+use structs::Struct;
 
 use std::collections::BTreeSet;
 
@@ -24,36 +26,47 @@ pub struct Shader {
 
     /// Entry Points to the shader binary
     pub entry_points: BTreeSet<EntryPoint>,
+
+    /// Structs described by the shader binary
+    pub structs: BTreeSet<Struct>,
+
+    /// Specialization constants defined in the shader binary
+    pub specialization_constants: BTreeSet<SpecializationConstant>,
 }
 
 impl Shader {
     /// Build a shader from parsed SPIR-V bytecode
     pub fn from_spirv(spirv: Spirv) -> Shader {
-        let capabilities = spirv.instructions.iter().filter_map(|instruction| {
-            if let &Instruction::Capability(capability) = instruction {
-                Some(capability)
-            } else {
-                None
-            }
-        }).collect();
+        let mut capabilities             = BTreeSet::new();
+        let mut entry_points             = BTreeSet::new();
+        let mut specialization_constants = BTreeSet::new();
+        let mut structs                  = BTreeSet::new();
 
-        let entry_points = spirv.instructions.iter().filter_map(|instruction| {
-            if let &Instruction::EntryPoint{ref execution, id, ref name, ref interface} = instruction {
-                Some(EntryPoint{
-                    execution_model: *execution,
-                    id:              id,
-                    interface:       interface.clone(),
-                    name:            name.clone(),
-                })
-            } else {
-                None
-            }
-        }).collect();
+        for instruction in &spirv.instructions {
+            match instruction {
+                &Instruction::Capability(capability) => capabilities.insert(capability),
+                &Instruction::EntryPoint{ref execution, id, ref name, ref interface} => entry_points.insert(
+                    EntryPoint {
+                        execution_model: *execution,
+                        id:              id,
+                        interface:       interface.clone(),
+                        name:            name.clone(),
+                    }
+                ),
+                &Instruction::TypeStruct{result_id, ref member_types} => structs.insert(Struct {
+                    id:           result_id,
+                    member_types: member_types.clone(),
+                }),
+                _ => continue,
+            };
+        }
 
         Shader {
-            spirv,
             capabilities,
             entry_points,
+            specialization_constants,
+            spirv,
+            structs,
         }
     }
 }

@@ -204,7 +204,7 @@ impl {name} {{
 
         // struct definitions
         output.push_str("pub mod ty {");
-        output.push_str(&structs::write_structs(&shader.spirv));
+        output.push_str(&structs::write_structs(&shader));
         output.push_str("}");
 
         // descriptor sets
