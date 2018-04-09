@@ -8,12 +8,12 @@
 // according to those terms.
 
 use parse::{Instruction, Spirv};
-use enums::Capability;
+use enums::{Capability, Decoration};
 use entry_point::EntryPoint;
-use spec_consts::SpecializationConstant;
+use spec_consts::{SpecializationConstant, SpecializationConstantKind};
 use structs::Struct;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, BTreeMap};
 
 pub struct Shader {
     /// The shader's parsed SPIR-V bytecode
@@ -37,28 +37,99 @@ pub struct Shader {
 impl Shader {
     /// Build a shader from parsed SPIR-V bytecode
     pub fn from_spirv(spirv: Spirv) -> Shader {
-        let mut capabilities             = BTreeSet::new();
-        let mut entry_points             = BTreeSet::new();
-        let mut specialization_constants = BTreeSet::new();
-        let mut structs                  = BTreeSet::new();
+        let mut capabilities                = BTreeSet::new();
+        let mut entry_points                = BTreeSet::new();
+        let mut specialization_constant_ids = BTreeMap::new();
+        let mut structs                     = BTreeSet::new();
+        let mut names                       = BTreeMap::new();
 
         for instruction in &spirv.instructions {
             match instruction {
-                &Instruction::Capability(capability) => capabilities.insert(capability),
-                &Instruction::EntryPoint{ref execution, id, ref name, ref interface} => entry_points.insert(
-                    EntryPoint {
+                &Instruction::Capability(capability) => {
+                    capabilities.insert(capability);
+                }
+                &Instruction::EntryPoint{ref execution, id, ref name, ref interface} => {
+                    entry_points.insert(EntryPoint {
                         execution_model: *execution,
                         id:              id,
                         interface:       interface.clone(),
                         name:            name.clone(),
+                    });
+                }
+                &Instruction::TypeStruct{result_id, ref member_types} => {
+                    structs.insert(Struct {
+                        id:           result_id,
+                        member_types: member_types.clone(),
+                    });
+                }
+                &Instruction::Name{target_id, ref name} => {
+                    if names.contains_key(&target_id) {
+                        panic!("Duplicate name: {} {}", target_id, name);
                     }
-                ),
-                &Instruction::TypeStruct{result_id, ref member_types} => structs.insert(Struct {
-                    id:           result_id,
-                    member_types: member_types.clone(),
-                }),
+                    names.insert(target_id, name.clone());
+                }
+                &Instruction::Decorate{target_id, decoration, ref params} => {
+                  match decoration {
+                    Decoration::DecorationSpecId => {
+                      let constant_id = params[0];
+                      if specialization_constant_ids.contains_key(&constant_id) {
+                        panic!("Duplicate specialization constant decoration: {}", constant_id);
+                      }
+                      specialization_constant_ids.insert(target_id, constant_id);
+                    },
+                    _ => {},
+                  }
+                }
+                _ => {},
+            };
+        }
+
+        let mut specialization_constants = BTreeSet::new();
+
+        for instruction in &spirv.instructions {
+            let (result_type_id, result_id, specialization_constant_kind) = match instruction {
+                &Instruction::SpecConstantTrue {
+                    result_type_id,
+                    result_id,
+                } => {
+                    (result_type_id, result_id, SpecializationConstantKind::True)
+                },
+                &Instruction::SpecConstantFalse {
+                    result_type_id,
+                    result_id,
+                } => {
+                    (result_type_id, result_id, SpecializationConstantKind::False)
+                },
+                &Instruction::SpecConstant {
+                    result_type_id,
+                    result_id,
+                    ref data,
+                } => {
+                    let kind = SpecializationConstantKind::Scalar{default_value: data.clone()};
+                    (result_type_id, result_id, kind)
+                },
+                &Instruction::SpecConstantComposite {
+                    result_type_id,
+                    result_id,
+                    ref data,
+                } => {
+                    let kind = SpecializationConstantKind::Composite{default_value: data.clone()};
+                    (result_type_id, result_id, kind)
+                },
                 _ => continue,
             };
+
+            let constant_id = specialization_constant_ids.remove(&result_id)
+                .expect("no id for specialization constant");
+
+            let name = name.remove(result_id)
+                .expect("unnamed specialization constant")
+
+            specialization_constants.insert(SpecializationConstant {
+                name,
+                constant_id,
+                kind,
+            });
         }
 
         Shader {

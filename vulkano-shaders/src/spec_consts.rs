@@ -16,10 +16,10 @@ use parse;
 pub struct SpecializationConstant {
     constant_id:    u32,
     name:           String,
+    kind:           SpecializationConstantKind,
     rust_alignment: usize,
     rust_size:      usize,
     rust_ty:        String,
-    kind:           SpecializationConstantKind,
 }
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
