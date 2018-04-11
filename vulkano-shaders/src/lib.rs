@@ -27,6 +27,7 @@ mod parse;
 mod spec_consts;
 mod structs;
 mod shader;
+mod types;
 
 use shader::Shader;
 
@@ -211,7 +212,7 @@ impl {name} {{
         output.push_str(&descriptor_sets::write_descriptor_sets(&shader.spirv));
 
         // specialization constants
-        output.push_str(&spec_consts::write_specialization_constants(&shader.spirv));
+        output.push_str(&spec_consts::write_specialization_constants(&shader));
     }
 
     Ok(output)

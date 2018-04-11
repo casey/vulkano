@@ -11,6 +11,7 @@ use std::mem;
 
 use enums;
 use parse;
+use types::Type;
 
 use shader::Shader;
 
@@ -24,10 +25,12 @@ pub struct Struct {
 pub fn write_structs(shader: &Shader) -> String {
     let mut result = String::new();
 
-    for spirv_struct in &shader.structs {
-        let (s, _) = write_struct(&shader.spirv, spirv_struct.id, &spirv_struct.member_types);
-        result.push_str(&s);
-        result.push_str("\n");
+    for (id, ty) in &shader.types {
+        if let &Type::Struct{ref member_type_ids, ..} = ty {
+            let (s, _) = write_struct(&shader.spirv, *id, member_type_ids);
+            result.push_str(&s);
+            result.push_str("\n");
+        }
     }
 
     result

@@ -11,7 +11,7 @@ use parse::{Instruction, Spirv};
 use enums::{Capability, Decoration};
 use entry_point::EntryPoint;
 use spec_consts::{SpecializationConstant, SpecializationConstantKind};
-use structs::Struct;
+use types::{extract_types, Type};
 
 use std::collections::{BTreeSet, BTreeMap};
 
@@ -27,11 +27,17 @@ pub struct Shader {
     /// Entry Points to the shader binary
     pub entry_points: BTreeSet<EntryPoint>,
 
-    /// Structs described by the shader binary
-    pub structs: BTreeSet<Struct>,
-
     /// Specialization constants defined in the shader binary
     pub specialization_constants: BTreeSet<SpecializationConstant>,
+
+    /// A map of (result id, Decoration) tuples to the decoration content
+    pub decorations: BTreeMap<(u32, Decoration), Vec<u32>>,
+
+    /// A map of (result id, member number, Decoration) tuples to the decoration content
+    pub member_decorations: BTreeMap<(u32, u32, Decoration), Vec<u32>>,
+
+    /// Types described by the shader binary
+    pub types: BTreeMap<u32, Type>,
 }
 
 impl Shader {
@@ -39,9 +45,9 @@ impl Shader {
     pub fn from_spirv(spirv: Spirv) -> Shader {
         let mut capabilities                = BTreeSet::new();
         let mut entry_points                = BTreeSet::new();
-        let mut specialization_constant_ids = BTreeMap::new();
-        let mut structs                     = BTreeSet::new();
         let mut names                       = BTreeMap::new();
+        let mut decorations                 = BTreeMap::new();
+        let mut member_decorations          = BTreeMap::new();
 
         for instruction in &spirv.instructions {
             match instruction {
@@ -56,38 +62,41 @@ impl Shader {
                         name:            name.clone(),
                     });
                 }
-                &Instruction::TypeStruct{result_id, ref member_types} => {
-                    structs.insert(Struct {
-                        id:           result_id,
-                        member_types: member_types.clone(),
-                    });
-                }
                 &Instruction::Name{target_id, ref name} => {
                     if names.contains_key(&target_id) {
                         panic!("Duplicate name: {} {}", target_id, name);
                     }
                     names.insert(target_id, name.clone());
                 }
-                &Instruction::Decorate{target_id, decoration, ref params} => {
-                  match decoration {
-                    Decoration::DecorationSpecId => {
-                      let constant_id = params[0];
-                      if specialization_constant_ids.contains_key(&constant_id) {
-                        panic!("Duplicate specialization constant decoration: {}", constant_id);
-                      }
-                      specialization_constant_ids.insert(target_id, constant_id);
-                    },
-                    _ => {},
-                  }
+                &Instruction::MemberDecorate{target_id, member, decoration, ref params} => {
+                    member_decorations.insert((target_id, member, decoration), params.clone());
                 }
-                _ => {},
+                &Instruction::Decorate{target_id, decoration, ref params} => {
+                    decorations.insert((target_id, decoration), params.clone());
+                    /*
+                    match decoration {
+                        Decoration::DecorationSpecId => {
+                        let constant_id = params[0];
+                        if specialization_constant_ids.contains_key(&constant_id) {
+                            panic!("Duplicate specialization constant decoration: {}", constant_id);
+                        }
+                        specialization_constant_ids.insert(target_id, constant_id);
+                        },
+                        _ => {}
+                    }
+                    */
+                }
+                _ => {}
             };
         }
+
+        let types = extract_types(&spirv.instructions, &names)
+            .expect("failed to extract types");
 
         let mut specialization_constants = BTreeSet::new();
 
         for instruction in &spirv.instructions {
-            let (result_type_id, result_id, specialization_constant_kind) = match instruction {
+            let (result_type_id, result_id, kind) = match instruction {
                 &Instruction::SpecConstantTrue {
                     result_type_id,
                     result_id,
@@ -119,25 +128,43 @@ impl Shader {
                 _ => continue,
             };
 
-            let constant_id = specialization_constant_ids.remove(&result_id)
-                .expect("no id for specialization constant");
+            let constant_id = decorations
+                .remove(&(result_id, Decoration::DecorationSpecId))
+                .expect("no id for specialization constant")
+                [0];
 
-            let name = name.remove(result_id)
+            let name = names.get(&result_id)
                 .expect("unnamed specialization constant")
+                .clone();
+
+            let spirv_type = types.get(&result_type_id)
+                .expect("Specialization constant with no type")
+                .clone();
+
+            let rust_type = spirv_type.rust_type()
+                .expect("Specialization constant with no rust type");
+
+            let rust_size = rust_type.size
+                .expect("Specialization constant with unsized rust type");
 
             specialization_constants.insert(SpecializationConstant {
-                name,
                 constant_id,
                 kind,
+                name,
+                rust_size,
+                rust_type,
+                spirv_type,
             });
         }
 
         Shader {
-            capabilities,
-            entry_points,
             specialization_constants,
+            capabilities,
+            decorations,
+            entry_points,
+            member_decorations,
             spirv,
-            structs,
+            types,
         }
     }
 }
