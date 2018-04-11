@@ -99,14 +99,15 @@ impl Type {
                     alignment: alignment,
                 })
             }
-            Struct{ref name, ref member_types, ref member_type_ids} => {
+            Struct{name: ref _name, ref member_types, member_type_ids: ref _member_type_ids} => {
                 member_types.iter()
                     .map(|ty| ty.rust_type())
                     // If any of the member types has no rust type, this collect will
                     // return None, returning None for the struct as a whole.
                     .collect::<Option<Vec<RustType>>>()
-                    .map(|member_rust_types| {
+                    .map(|_member_rust_types| {
                         panic!();
+                        /*
                         RustType {
                             name:      name.clone(),
                             alignment: member_rust_types.iter()
@@ -115,6 +116,7 @@ impl Type {
                                         .unwrap_or(1),
                             size:      Some(1)
                         }
+                        */
                     })
             }
         }

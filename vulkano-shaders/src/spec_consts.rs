@@ -7,10 +7,6 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 
-use std::mem;
-
-use enums;
-use parse;
 use shader::Shader;
 use types::{RustType, Type};
 
@@ -46,21 +42,6 @@ fn default_value(specialization_constant: &SpecializationConstant) -> String {
                 .join(", ")
         )
     }
-}
-
-/// Returns true if the document has specialization constants.
-pub fn has_specialization_constants(doc: &parse::Spirv) -> bool {
-    for instruction in doc.instructions.iter() {
-        match instruction {
-            &parse::Instruction::SpecConstantTrue { .. } => return true,
-            &parse::Instruction::SpecConstantFalse { .. } => return true,
-            &parse::Instruction::SpecConstant { .. } => return true,
-            &parse::Instruction::SpecConstantComposite { .. } => return true,
-            _ => (),
-        }
-    }
-
-    false
 }
 
 /// Writes the `SpecializationConstants` struct that contains the specialization constants and

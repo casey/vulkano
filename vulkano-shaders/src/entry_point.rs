@@ -16,6 +16,7 @@ use location_decoration;
 use name_from_id;
 
 use enums::ExecutionModel;
+use shader::Shader;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct EntryPoint {
@@ -25,7 +26,8 @@ pub struct EntryPoint {
     pub name:            String,
 }
 
-pub fn write_entry_point(doc: &parse::Spirv, entry_point: &EntryPoint) -> (String, String) {
+pub fn write_entry_point(shader: &Shader, entry_point: &EntryPoint) -> (String, String) {
+    let doc = &shader.spirv;
     let &EntryPoint{execution_model: execution, id, name: ref ep_name, ref interface} = entry_point;
 
     let capitalized_ep_name: String = ep_name
@@ -53,7 +55,7 @@ pub fn write_entry_point(doc: &parse::Spirv, entry_point: &EntryPoint) -> (Strin
                                     _ => false,
                                 });
 
-    let spec_consts_struct = if ::spec_consts::has_specialization_constants(doc) {
+    let spec_consts_struct = if !shader.specialization_constants.is_empty() {
         "SpecializationConstants"
     } else {
         "()"
