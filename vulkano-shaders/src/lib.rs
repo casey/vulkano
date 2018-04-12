@@ -28,6 +28,7 @@ mod spec_consts;
 mod structs;
 mod shader;
 mod types;
+mod codegen;
 
 use shader::Shader;
 
@@ -69,9 +70,7 @@ pub fn build_glsl_shaders<'a, I>(shaders: I)
     }
 }
 
-pub fn reflect<R>(name: &str, mut spirv_reader: R) -> Result<String, Error>
-    where R: Read
-{
+pub fn reflect<R: Read>(name: &str, mut spirv_reader: R) -> Result<String, Error> {
     let mut data = Vec::new();
     spirv_reader.read_to_end(&mut data)?;
 
@@ -210,6 +209,8 @@ impl {name} {{
 
         // descriptor sets
         output.push_str(&descriptor_sets::write_descriptor_sets(&shader.spirv));
+
+        // codegen::write_specialization_constants(&shader.specialization_constants, &output)?;
 
         // specialization constants
         output.push_str(&spec_consts::write_specialization_constants(&shader));
@@ -463,7 +464,6 @@ fn is_builtin(doc: &parse::Spirv, id: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use glsl_to_spirv;
     use super::*;
 
     #[test]

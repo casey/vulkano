@@ -28,7 +28,7 @@ pub struct Shader {
     pub entry_points: BTreeSet<EntryPoint>,
 
     /// Specialization constants defined in the shader binary
-    pub specialization_constants: BTreeSet<SpecializationConstant>,
+    pub specialization_constants: Vec<SpecializationConstant>,
 
     /// A map of (result id, Decoration) tuples to the decoration content
     pub decorations: BTreeMap<(u32, Decoration), Vec<u32>>,
@@ -41,6 +41,19 @@ pub struct Shader {
 }
 
 impl Shader {
+    pub fn decoration(&self, target_id: u32, decoration: Decoration) -> Option<&[u32]> {
+        self.decorations.get(&(target_id, decoration)).map(Vec::as_slice)
+    }
+
+    pub fn member_decoration(
+        &self,
+        target_id:     u32,
+        member_number: u32,
+        decoration:    Decoration,
+    ) -> Option<&[u32]> {
+        self.member_decorations.get(&(target_id, member_number, decoration)).map(Vec::as_slice)
+    }
+
     /// Build a shader from parsed SPIR-V bytecode
     pub fn from_spirv(spirv: Spirv) -> Shader {
         let mut capabilities                = BTreeSet::new();
@@ -73,18 +86,6 @@ impl Shader {
                 }
                 &Instruction::Decorate{target_id, decoration, ref params} => {
                     decorations.insert((target_id, decoration), params.clone());
-                    /*
-                    match decoration {
-                        Decoration::DecorationSpecId => {
-                        let constant_id = params[0];
-                        if specialization_constant_ids.contains_key(&constant_id) {
-                            panic!("Duplicate specialization constant decoration: {}", constant_id);
-                        }
-                        specialization_constant_ids.insert(target_id, constant_id);
-                        },
-                        _ => {}
-                    }
-                    */
                 }
                 _ => {}
             };
@@ -93,7 +94,7 @@ impl Shader {
         let types = extract_types(&spirv.instructions, &names)
             .expect("failed to extract types");
 
-        let mut specialization_constants = BTreeSet::new();
+        let mut specialization_constants = Vec::new();
 
         for instruction in &spirv.instructions {
             let (result_type_id, result_id, kind) = match instruction {
@@ -147,7 +148,7 @@ impl Shader {
             let rust_size = rust_type.size
                 .expect("Specialization constant with unsized rust type");
 
-            specialization_constants.insert(SpecializationConstant {
+            specialization_constants.push(SpecializationConstant {
                 constant_id,
                 kind,
                 name,
