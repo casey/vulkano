@@ -13,6 +13,7 @@ use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::Error as IoError;
+use std::fmt;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
@@ -210,10 +211,7 @@ impl {name} {{
         // descriptor sets
         output.push_str(&descriptor_sets::write_descriptor_sets(&shader.spirv));
 
-        // codegen::write_specialization_constants(&shader.specialization_constants, &output)?;
-
-        // specialization constants
-        output.push_str(&spec_consts::write_specialization_constants(&shader));
+        codegen::write_specialization_constants(&shader.specialization_constants, &mut output)?;
     }
 
     Ok(output)
@@ -223,6 +221,7 @@ impl {name} {{
 pub enum Error {
     IoError(IoError),
     ParseError(ParseError),
+    FmtError(fmt::Error),
 }
 
 impl From<IoError> for Error {
@@ -236,6 +235,13 @@ impl From<ParseError> for Error {
     #[inline]
     fn from(err: ParseError) -> Error {
         Error::ParseError(err)
+    }
+}
+
+impl From<fmt::Error> for Error {
+    #[inline]
+    fn from(err: fmt::Error) -> Error {
+        Error::FmtError(err)
     }
 }
 

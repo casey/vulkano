@@ -41,11 +41,11 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub fn decoration(&self, target_id: u32, decoration: Decoration) -> Option<&[u32]> {
+    pub fn _decoration(&self, target_id: u32, decoration: Decoration) -> Option<&[u32]> {
         self.decorations.get(&(target_id, decoration)).map(Vec::as_slice)
     }
 
-    pub fn member_decoration(
+    pub fn _member_decoration(
         &self,
         target_id:     u32,
         member_number: u32,
@@ -157,6 +157,9 @@ impl Shader {
                 spirv_type,
             });
         }
+
+        // Sort specialization constants by their constant IDs
+        specialization_constants.sort_by_key(|c| c.constant_id);
 
         Shader {
             specialization_constants,
