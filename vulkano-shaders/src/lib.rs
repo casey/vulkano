@@ -186,13 +186,7 @@ impl {name} {{
             spirv_data = spirv_data
         ));
 
-        // writing one method for each entry point of this module
-        let mut outside_impl = String::new();
-        for entry_point in &shader.entry_points {
-            let (outside, entry_point) = entry_point::write_entry_point(&shader, entry_point);
-            output.push_str(&entry_point);
-            outside_impl.push_str(&outside);
-        }
+        codegen::entry_points::write_entry_points(&shader, &mut output)?;
 
         // footer
         output.push_str(&format!(
@@ -201,7 +195,7 @@ impl {name} {{
         "#
         ));
 
-        output.push_str(&outside_impl);
+        codegen::entry_points::write_interface_structs(&shader, &mut output)?;
 
         // struct definitions
         output.push_str("pub mod ty {");
@@ -211,7 +205,7 @@ impl {name} {{
         // descriptor sets
         output.push_str(&descriptor_sets::write_descriptor_sets(&shader.spirv));
 
-        codegen::write_specialization_constants(&shader.specialization_constants, &mut output)?;
+        codegen::specialization_constants::write(&shader.specialization_constants, &mut output)?;
     }
 
     Ok(output)

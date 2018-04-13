@@ -1,11 +1,9 @@
 use std::fmt;
-
 use spec_consts::SpecializationConstant;
-
 
 /// Writes the `SpecializationConstants` struct that contains the specialization constants and
 /// implements the `Default` and the `vulkano::pipeline::shader::SpecializationConstants` traits.
-pub fn write_specialization_constants(
+pub fn write(
     specialization_constants: &[SpecializationConstant],
     destination:              &mut fmt::Write,
 ) -> fmt::Result {
@@ -25,7 +23,6 @@ pub fn write_specialization_constants(
             )
         }
     }
-
 
     let map_entries = {
         let mut map_entries = Vec::new();

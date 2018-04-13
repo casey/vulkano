@@ -26,8 +26,8 @@ pub fn write_structs(shader: &Shader) -> String {
     let mut result = String::new();
 
     for (id, ty) in &shader.types {
-        if let &Type::Struct{ref member_type_ids, ..} = ty {
-            let (s, _) = write_struct(&shader.spirv, *id, member_type_ids);
+        if let &Type::Struct{ref name, ref member_type_ids, ..} = ty {
+            let (s, _) = write_struct(&shader.spirv, *id, member_type_ids, name);
             result.push_str(&s);
             result.push_str("\n");
         }
@@ -56,9 +56,12 @@ impl Member {
 }
 
 /// Analyzes a single struct, returns a string containing its Rust definition, plus its size.
-fn write_struct(doc: &parse::Spirv, struct_id: u32, members: &[u32]) -> (String, Option<usize>) {
-    let name = ::name_from_id(doc, struct_id);
-
+fn write_struct(
+    doc: &parse::Spirv,
+    struct_id: u32,
+    members: &[u32],
+    name: &str
+) -> (String, Option<usize>) {
     // The members of this struct.
     let mut rust_members = Vec::with_capacity(members.len());
 
@@ -415,7 +418,7 @@ pub fn type_from_id(doc: &parse::Spirv, searched: u32) -> (String, Option<usize>
             } if result_id == searched => {
                 // TODO: take the Offset member decorate into account?
                 let name = ::name_from_id(doc, result_id);
-                let (_, size) = write_struct(doc, result_id, member_types);
+                let (_, size) = write_struct(doc, result_id, member_types, &name);
                 let align = member_types
                     .iter()
                     .map(|&t| type_from_id(doc, t).2)
