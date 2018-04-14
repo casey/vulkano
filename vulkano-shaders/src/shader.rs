@@ -56,11 +56,14 @@ impl Shader {
 
     /// Build a shader from parsed SPIR-V bytecode
     pub fn from_spirv(spirv: Spirv) -> Shader {
+        // TODO: These should probbaly all be hashmaps/sets, with sorting happening
+        //       during codegen.
         let mut capabilities                = BTreeSet::new();
         let mut names                       = BTreeMap::new();
         let mut decorations                 = BTreeMap::new();
         let mut member_decorations          = BTreeMap::new();
         let mut variables                   = BTreeMap::new();
+        let mut execution_modes             = BTreeMap::new();
 
         for instruction in &spirv.instructions {
             match instruction {
@@ -81,6 +84,9 @@ impl Shader {
                 }
                 &Instruction::Variable{result_type_id, result_id, storage_class, .. } => {
                     variables.insert(result_id, (result_type_id, storage_class));
+                }
+                &Instruction::ExecutionMode{target_id, mode, ..} => {
+                    (*execution_modes.entry(target_id).or_insert_with(|| Vec::new())).push(mode);
                 }
                 _ => {}
             };
@@ -136,8 +142,8 @@ impl Shader {
 
                 Some(EntryPoint {
                     execution_model: *execution,
+                    execution_modes: execution_modes.remove(&id).unwrap_or_else(Vec::new).clone(),
                     id:              id,
-                    interface_ids:   interface.clone(),
                     name:            name.clone(),
                     inputs,
                     outputs,
@@ -257,9 +263,9 @@ mod test {
         assert_eq!(capabilities, &[Capability::CapabilityShader]);
         assert_eq!(entry_points, &[EntryPoint {
             execution_model: ExecutionModel::ExecutionModelVertex,
+            execution_modes: vec![],
             id:              4,
             name:            "main".to_string(),
-            interface_ids:   vec![13, 17],
             inputs:          vec![InterfaceVariable {
                 name: "position".to_string(),
                 location: 0,

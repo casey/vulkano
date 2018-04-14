@@ -32,6 +32,7 @@ mod types;
 mod codegen;
 
 use shader::Shader;
+use entry_point::EntryPoint;
 
 pub fn build_glsl_shaders<'a, I>(shaders: I)
     where I: IntoIterator<Item = (&'a str, ShaderType)>
@@ -185,8 +186,15 @@ impl {name} {{
             name = name,
             spirv_data = spirv_data
         ));
+        
+        let entry_points = shader.entry_points
+            .iter().cloned().collect::<Vec<EntryPoint>>();
 
-        codegen::entry_points::write_entry_points(&shader, &mut output)?;
+        codegen::entry_points::write_entry_points(
+            &entry_points, 
+            !shader.specialization_constants.is_empty(),
+            &mut output,
+        )?;
 
         // footer
         output.push_str(&format!(
@@ -195,7 +203,7 @@ impl {name} {{
         "#
         ));
 
-        codegen::entry_points::write_interface_structs(&shader, &mut output)?;
+        codegen::entry_points::write_interface_structs(&entry_points, &mut output)?;
 
         // struct definitions
         output.push_str("pub mod ty {");
@@ -237,109 +245,6 @@ impl From<fmt::Error> for Error {
     fn from(err: fmt::Error) -> Error {
         Error::FmtError(err)
     }
-}
-
-/// Returns the vulkano `Format` and number of occupied locations from an id.
-///
-/// If `ignore_first_array` is true, the function expects the outermost instruction to be
-/// `OpTypeArray`. If it's the case, the OpTypeArray will be ignored. If not, the function will
-/// panic.
-fn format_from_id(doc: &parse::Spirv, searched: u32, ignore_first_array: bool) -> (String, usize) {
-    for instruction in doc.instructions.iter() {
-        match instruction {
-            &parse::Instruction::TypeInt {
-                result_id,
-                width,
-                signedness,
-            } if result_id == searched => {
-                assert!(!ignore_first_array);
-                return (match (width, signedness) {
-                    (8, true) => "R8Sint",
-                    (8, false) => "R8Uint",
-                    (16, true) => "R16Sint",
-                    (16, false) => "R16Uint",
-                    (32, true) => "R32Sint",
-                    (32, false) => "R32Uint",
-                    (64, true) => "R64Sint",
-                    (64, false) => "R64Uint",
-                    _ => panic!(),
-                }.to_owned(),
-                        1);
-            },
-            &parse::Instruction::TypeFloat { result_id, width } if result_id == searched => {
-                assert!(!ignore_first_array);
-                return (match width {
-                    32 => "R32Sfloat",
-                    64 => "R64Sfloat",
-                    _ => panic!(),
-                }.to_owned(),
-                        1);
-            },
-            &parse::Instruction::TypeVector {
-                result_id,
-                component_id,
-                count,
-            } if result_id == searched => {
-                assert!(!ignore_first_array);
-                let (format, sz) = format_from_id(doc, component_id, false);
-                assert!(format.starts_with("R32"));
-                assert_eq!(sz, 1);
-                let format = if count == 1 {
-                    format
-                } else if count == 2 {
-                    format!("R32G32{}", &format[3 ..])
-                } else if count == 3 {
-                    format!("R32G32B32{}", &format[3 ..])
-                } else if count == 4 {
-                    format!("R32G32B32A32{}", &format[3 ..])
-                } else {
-                    panic!("Found vector type with more than 4 elements")
-                };
-                return (format, sz);
-            },
-            &parse::Instruction::TypeMatrix {
-                result_id,
-                column_type_id,
-                column_count,
-            } if result_id == searched => {
-                assert!(!ignore_first_array);
-                let (format, sz) = format_from_id(doc, column_type_id, false);
-                return (format, sz * column_count as usize);
-            },
-            &parse::Instruction::TypeArray {
-                result_id,
-                type_id,
-                length_id,
-            } if result_id == searched => {
-                if ignore_first_array {
-                    return format_from_id(doc, type_id, false);
-                }
-
-                let (format, sz) = format_from_id(doc, type_id, false);
-                let len = doc.instructions
-                    .iter()
-                    .filter_map(|e| match e {
-                                    &parse::Instruction::Constant {
-                                        result_id,
-                                        ref data,
-                                        ..
-                                    } if result_id == length_id => Some(data.clone()),
-                                    _ => None,
-                                })
-                    .next()
-                    .expect("failed to find array length");
-                let len = len.iter().rev().fold(0u64, |a, &b| (a << 32) | b as u64);
-                return (format, sz * len as usize);
-            },
-            &parse::Instruction::TypePointer { result_id, type_id, .. }
-                if result_id == searched => {
-                return format_from_id(doc, type_id, ignore_first_array);
-            },
-            _ => (),
-        }
-    }
-
-    panic!("Type #{} not found or invalid", searched)
 }
 
 fn name_from_id(doc: &parse::Spirv, searched: u32) -> String {
@@ -385,28 +290,9 @@ fn member_name_from_id(doc: &parse::Spirv, searched: u32, searched_member: u32) 
         .unwrap_or("__unnamed".to_owned())
 }
 
-fn location_decoration(doc: &parse::Spirv, searched: u32) -> Option<u32> {
-    doc.instructions
-        .iter()
-        .filter_map(|i| if let &parse::Instruction::Decorate {
-            target_id,
-            decoration: enums::Decoration::DecorationLocation,
-            ref params,
-        } = i
-        {
-            if target_id == searched {
-                Some(params[0])
-            } else {
-                None
-            }
-        } else {
-            None
-        })
-        .next()
-}
-
 /// Returns true if a `BuiltIn` decorator is applied on an id.
-fn is_builtin(doc: &parse::Spirv, id: u32) -> bool {
+/// TODO: Why does this also return true when the type is built in?
+fn _is_builtin(doc: &parse::Spirv, id: u32) -> bool {
     for instruction in &doc.instructions {
         match *instruction {
             parse::Instruction::Decorate {
@@ -434,26 +320,26 @@ fn is_builtin(doc: &parse::Spirv, id: u32) -> bool {
                 result_id,
                 ..
             } if result_id == id => {
-                return is_builtin(doc, result_type_id);
+                return _is_builtin(doc, result_type_id);
             },
             parse::Instruction::TypeArray { result_id, type_id, .. } if result_id == id => {
-                return is_builtin(doc, type_id);
+                return _is_builtin(doc, type_id);
             },
             parse::Instruction::TypeRuntimeArray { result_id, type_id } if result_id == id => {
-                return is_builtin(doc, type_id);
+                return _is_builtin(doc, type_id);
             },
             parse::Instruction::TypeStruct {
                 result_id,
                 ref member_types,
             } if result_id == id => {
                 for &mem in member_types {
-                    if is_builtin(doc, mem) {
+                    if _is_builtin(doc, mem) {
                         return true;
                     }
                 }
             },
             parse::Instruction::TypePointer { result_id, type_id, .. } if result_id == id => {
-                return is_builtin(doc, type_id);
+                return _is_builtin(doc, type_id);
             },
             _ => (),
         }

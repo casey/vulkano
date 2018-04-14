@@ -66,6 +66,8 @@ macro_rules! rust_scalar_type {
 
 impl Type {
     // TODO: Should this return an error if there are no occupied locations?
+    // TODO: Is this general enough to be on all types, or should it be in
+    //       entrypoints.rs
     pub fn occupied_locations(&self) -> Option<usize> {
         use self::Type::*;
         match *self {
@@ -103,6 +105,8 @@ impl Type {
     // TODO: Should this be a function on Type or RustType?
     // TODO: SHould these use the vulkano format types?
     // TODO: SHould this return result with descriptive errors?
+    // TODO: Is this general enough to be on all types, or should it be in
+    //       entrypoints.rs
     pub fn format(&self) -> Option<String> {
         use self::Type::*;
         match *self {
