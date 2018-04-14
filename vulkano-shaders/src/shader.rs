@@ -97,6 +97,9 @@ impl Shader {
                 let mut outputs = Vec::new();
 
                 for interface_id in interface {
+                    // TODO: ::is_builtin contains checks to see if the type of the interface, not
+                    //       just the interface itself had the builtin decorator. I'd like to
+                    //       understand those checks better.
                     if decorations.contains_key(&(*interface_id, Decoration::DecorationBuiltIn)) {
                         continue;
                     }

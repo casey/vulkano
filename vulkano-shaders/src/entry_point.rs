@@ -14,6 +14,7 @@ use types::Type;
 pub struct EntryPoint {
     pub execution_model: ExecutionModel,
     pub id:              u32,
+    // TODO: remove this
     pub interface_ids:   Vec<u32>,
     pub name:            String,
     pub inputs:          Vec<InterfaceVariable>,

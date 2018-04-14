@@ -20,7 +20,8 @@ use name_from_id;
 
 use enums::ExecutionModel;
 use shader::Shader;
-use entry_point::EntryPoint;
+use entry_point::{EntryPoint, InterfaceVariable};
+use types::Type;
 
 pub fn write_entry_points(shader: &Shader, destination: &mut fmt::Write) -> fmt::Result {
     for entry_point in &shader.entry_points {
@@ -178,19 +179,21 @@ fn write_entry_point(
 
 pub fn write_interface_structs(shader: &Shader, destination: &mut fmt::Write) -> fmt::Result {
     for entry_point in &shader.entry_points {
-        let doc = &shader.spirv;
-        let interface_structs = write_entry_point_interface_structs(entry_point, doc);
-        write!(destination, "{}", interface_structs)?;
+        write_entry_point_interface_structs(entry_point, destination)?;
     }
     Ok(())
 }
 
 fn write_entry_point_interface_structs(
     entry_point: &EntryPoint,
-    doc:         &parse::Spirv,
-) -> String {
+    destination: &mut fmt::Write,
+) -> fmt::Result {
     let capitalized_name = codegen::capitalize(&entry_point.name);
 
+    // TODO: Should this logic be moved into shader parsing? i.e. should the type of each
+    //       interface variable in entry_point.interfaces be stripped of the outer
+    //       array wrapper before we get here?
+    // TODO: Find out and document why we do this
     let ignore_first_array_in = match entry_point.execution_model {
         ExecutionModel::ExecutionModelTessellationControl |
         ExecutionModel::ExecutionModelTessellationEvaluation |
@@ -201,91 +204,49 @@ fn write_entry_point_interface_structs(
     let ignore_first_array_out =
         entry_point.execution_model == ExecutionModel::ExecutionModelTessellationControl;
 
-    let mut input_elements = Vec::new();
-    let mut output_elements = Vec::new();
+    write_interface_struct(
+        &format!("{}Input", capitalized_name),
+        &entry_point.inputs,
+        ignore_first_array_in,
+        destination,
+    )?;
 
-    /*
-    // Filling `input_elements` and `output_elements`.
-    for interface in entry_point.interface_ids.iter() {
-        for i in doc.instructions.iter() {
-            match i {
-                &parse::Instruction::Variable {
-                    result_type_id,
-                    result_id,
-                    ref storage_class,
-                    ..
-                } if &result_id == interface => {
-                    if is_builtin(doc, result_id) {
-                        continue;
-                    }
-
-                    let (to_write, ignore_first_array) = match storage_class {
-                        &enums::StorageClass::StorageClassInput => (&mut input_elements,
-                                                                    ignore_first_array_in),
-                        &enums::StorageClass::StorageClassOutput => (&mut output_elements,
-                                                                     ignore_first_array_out),
-                        _ => continue,
-                    };
-
-                    let name = name_from_id(doc, result_id);
-
-                    if name == "__unnamed" {
-                        continue;
-                    } // FIXME: hack
-
-                    let loc = match location_decoration(doc, result_id) {
-                        Some(l) => l,
-                        None => panic!("Attribute `{}` (id {}) is missing a location",
-                                       name,
-                                       result_id),
-                    };
-
-                    to_write
-                        .push((loc, name, format_from_id(doc, result_type_id, ignore_first_array)));
-                },
-                _ => (),
-            }
-        }
-    }
-    */
-
-    for input in &entry_point.inputs {
-        let format = input.spirv_type.format();
-
-        if format.is_none() {
-            panic!("entry point input without format: {:?}", input);
-        }
-
-        input_elements.push((
-            input.location,
-            input.name.clone(),
-            (input.spirv_type.format().unwrap(), input.spirv_type.occupied_locations().unwrap()),
-        ));
-    }
-
-    for output in &entry_point.outputs {
-        let format = output.spirv_type.format();
-
-        if format.is_none() {
-            panic!("entry point output without format: {:?}", output);
-        }
-
-        output_elements.push((
-            output.location,
-            output.name.clone(),
-            (output.spirv_type.format().unwrap(), output.spirv_type.occupied_locations().unwrap()),
-        ));
-    }
-
-    // location, name, vulkano format, number of occupied locations
-
-    write_interface_struct(&format!("{}Input", capitalized_name), &input_elements) +
-        &write_interface_struct(&format!("{}Output", capitalized_name), &output_elements)
+    write_interface_struct(
+        &format!("{}Output", capitalized_name),
+        &entry_point.outputs,
+        ignore_first_array_out,
+        destination,
+    )
 }
 
-fn write_interface_struct(struct_name: &str, attributes: &[(u32, String, (String, usize))])
-                          -> String {
+fn write_interface_struct(
+    struct_name:       &str,
+    interfaces:        &[InterfaceVariable],
+    strip_outer_array: bool,
+    destination:       &mut fmt::Write,
+) -> fmt::Result {
+    let attributes = interfaces.iter().map(|interface| {
+        let mut spirv_type = interface.spirv_type.clone();
+
+        if strip_outer_array {
+            if let Type::Array{element_type, ..} = spirv_type {
+                spirv_type = *element_type;
+            } else {
+                panic!("tried to strip outer array from type that was not an array: {:?}",
+                       interface.spirv_type);
+            }
+        }
+
+        // TODO: do something better than these unwraps. They could just be moved onto the
+        //       InterfaceVariable itself, without the option wrapper, and we could complain
+        //       at shader parse time if an interface variable contained a type without a format
+        //       or an occupied locations. we might also want to move occupied_locations() and
+        //       format() off of the Type object if they aren't useful in any other context.
+        (interface.location, interface.name.clone(), (spirv_type.format().unwrap(), spirv_type.occupied_locations().unwrap()))
+    }).collect::<Vec<(u32, String, (String, usize))>>();
+
     // Checking for overlapping elements.
+    // TODO: Move this check into shader parsing.
     for (offset, &(loc, ref name, (_, loc_len))) in attributes.iter().enumerate() {
         for &(loc2, ref name2, (_, loc_len2)) in attributes.iter().skip(offset + 1) {
             if loc == loc2 || (loc < loc2 && loc + loc_len as u32 > loc2) ||
@@ -329,7 +290,8 @@ fn write_interface_struct(struct_name: &str, attributes: &[(u32, String, (String
         .collect::<Vec<_>>()
         .join("");
 
-    format!(
+    write!(
+        destination,
         "
         #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
         pub struct {name};
