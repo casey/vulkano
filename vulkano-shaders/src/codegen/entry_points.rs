@@ -204,8 +204,9 @@ fn write_entry_point_interface_structs(
     let mut input_elements = Vec::new();
     let mut output_elements = Vec::new();
 
+    /*
     // Filling `input_elements` and `output_elements`.
-    for interface in entry_point.interface.iter() {
+    for interface in entry_point.interface_ids.iter() {
         for i in doc.instructions.iter() {
             match i {
                 &parse::Instruction::Variable {
@@ -227,6 +228,7 @@ fn write_entry_point_interface_structs(
                     };
 
                     let name = name_from_id(doc, result_id);
+
                     if name == "__unnamed" {
                         continue;
                     } // FIXME: hack
@@ -245,6 +247,37 @@ fn write_entry_point_interface_structs(
             }
         }
     }
+    */
+
+    for input in &entry_point.inputs {
+        let format = input.spirv_type.format();
+
+        if format.is_none() {
+            panic!("entry point input without format: {:?}", input);
+        }
+
+        input_elements.push((
+            input.location,
+            input.name.clone(),
+            (input.spirv_type.format().unwrap(), input.spirv_type.occupied_locations().unwrap()),
+        ));
+    }
+
+    for output in &entry_point.outputs {
+        let format = output.spirv_type.format();
+
+        if format.is_none() {
+            panic!("entry point output without format: {:?}", output);
+        }
+
+        output_elements.push((
+            output.location,
+            output.name.clone(),
+            (output.spirv_type.format().unwrap(), output.spirv_type.occupied_locations().unwrap()),
+        ));
+    }
+
+    // location, name, vulkano format, number of occupied locations
 
     write_interface_struct(&format!("{}Input", capitalized_name), &input_elements) +
         &write_interface_struct(&format!("{}Output", capitalized_name), &output_elements)

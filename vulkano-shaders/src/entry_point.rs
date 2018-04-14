@@ -8,11 +8,21 @@
 // according to those terms.
 
 use enums::ExecutionModel;
+use types::Type;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct EntryPoint {
     pub execution_model: ExecutionModel,
     pub id:              u32,
-    pub interface:       Vec<u32>,
+    pub interface_ids:   Vec<u32>,
     pub name:            String,
+    pub inputs:          Vec<InterfaceVariable>,
+    pub outputs:         Vec<InterfaceVariable>,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct InterfaceVariable {
+    pub name:       String,
+    pub spirv_type: Type,
+    pub location:   u32,
 }

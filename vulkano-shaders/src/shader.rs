@@ -8,8 +8,8 @@
 // according to those terms.
 
 use parse::{Instruction, Spirv};
-use enums::{Capability, Decoration};
-use entry_point::EntryPoint;
+use enums::{Capability, Decoration, StorageClass};
+use entry_point::{EntryPoint, InterfaceVariable};
 use spec_consts::{SpecializationConstant, SpecializationConstantKind};
 use types::{extract_types, Type};
 
@@ -57,23 +57,15 @@ impl Shader {
     /// Build a shader from parsed SPIR-V bytecode
     pub fn from_spirv(spirv: Spirv) -> Shader {
         let mut capabilities                = BTreeSet::new();
-        let mut entry_points                = BTreeSet::new();
         let mut names                       = BTreeMap::new();
         let mut decorations                 = BTreeMap::new();
         let mut member_decorations          = BTreeMap::new();
+        let mut variables                   = BTreeMap::new();
 
         for instruction in &spirv.instructions {
             match instruction {
                 &Instruction::Capability(capability) => {
                     capabilities.insert(capability);
-                }
-                &Instruction::EntryPoint{ref execution, id, ref name, ref interface} => {
-                    entry_points.insert(EntryPoint {
-                        execution_model: *execution,
-                        id:              id,
-                        interface:       interface.clone(),
-                        name:            name.clone(),
-                    });
                 }
                 &Instruction::Name{target_id, ref name} => {
                     if names.contains_key(&target_id) {
@@ -87,12 +79,70 @@ impl Shader {
                 &Instruction::Decorate{target_id, decoration, ref params} => {
                     decorations.insert((target_id, decoration), params.clone());
                 }
+                &Instruction::Variable{result_type_id, result_id, storage_class, .. } => {
+                    variables.insert(result_id, (result_type_id, storage_class));
+                }
                 _ => {}
             };
         }
 
+        println!("{:?}", spirv.instructions);
+
         let types = extract_types(&spirv.instructions, &names)
             .expect("failed to extract types");
+
+        let entry_points = spirv.instructions.iter().flat_map(|instruction| {
+            if let &Instruction::EntryPoint{ref execution, id, ref name, ref interface} = instruction {
+                let mut inputs = Vec::new();
+                let mut outputs = Vec::new();
+
+                for interface_id in interface {
+                    if decorations.contains_key(&(*interface_id, Decoration::DecorationBuiltIn)) {
+                        continue;
+                    }
+
+                    if let Some(&(type_id, storage_class)) = variables.get(interface_id) {
+                        let destination = match storage_class {
+                            StorageClass::StorageClassInput => &mut inputs,
+                            StorageClass::StorageClassOutput => &mut outputs,
+                            _ => continue,
+                        };
+
+                        let name = names
+                            .get(&interface_id)
+                            .expect("interface with no name").clone();
+
+                        if name == "" {
+                            // TODO: What does this mean?
+                            continue;
+                        }
+
+                        destination.push(InterfaceVariable {
+                            spirv_type: types
+                                            .get(&type_id)
+                                            .expect("interface with no type").clone(),
+                            location:   decorations
+                                            .get(&(*interface_id, Decoration::DecorationLocation))
+                                            .expect("interface with no location")[0],
+                            name,
+                        });
+                    } else {
+                        panic!("interface element without associated variable")
+                    }
+                }
+
+                Some(EntryPoint {
+                    execution_model: *execution,
+                    id:              id,
+                    interface_ids:   interface.clone(),
+                    name:            name.clone(),
+                    inputs,
+                    outputs,
+                })
+            } else {
+                None
+            }
+        }).collect();
 
         let mut specialization_constants = Vec::new();
 
@@ -206,7 +256,19 @@ mod test {
             execution_model: ExecutionModel::ExecutionModelVertex,
             id:              4,
             name:            "main".to_string(),
-            interface:       vec![13, 17],
+            interface_ids:   vec![13, 17],
+            inputs:          vec![InterfaceVariable {
+                name: "position".to_string(),
+                location: 0,
+                spirv_type: Type::Pointer {
+                    storage_class: StorageClass::StorageClassInput,
+                    pointee_type: Box::new(Type::Vector{
+                        element_count: 4,
+                        element_type: Box::new(Type::Float{width: 32}),
+                    }),
+                },
+            }],
+            outputs:         vec![],
         }]);
     }
 }

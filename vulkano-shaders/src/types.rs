@@ -10,9 +10,12 @@
 use parse::Instruction;
 use std::collections::BTreeMap;
 use std::mem;
+use enums::{StorageClass, Dim, ImageFormat, AccessQualifier};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
+    Void,
+    Opaque{name: String},
     Bool,
     Int{width: u32, signedness: bool},
     Float{width: u32},
@@ -21,6 +24,18 @@ pub enum Type {
     Array{element_count: u64, element_type: Box<Type>},
     RuntimeArray{element_type: Box<Type>},
     Struct{name: String, member_types: Vec<Type>, member_type_ids: Vec<u32>},
+    Pointer{storage_class: StorageClass, pointee_type: Box<Type>},
+    SampledImage{image_type: Box<Type>},
+    Image{
+        sampled_type:      Box<Type>,
+        dim:               Dim,
+        depth:             Option<bool>,
+        arrayed:           bool,
+        ms:                bool,
+        sampled:           Option<bool>,
+        format:            ImageFormat,
+        access_qualifier:  Option<AccessQualifier>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -50,6 +65,101 @@ macro_rules! rust_scalar_type {
 }
 
 impl Type {
+    // TODO: Should this return an error if there are no occupied locations?
+    pub fn occupied_locations(&self) -> Option<usize> {
+        use self::Type::*;
+        match *self {
+            Bool => None,
+            Int{width: 8,  signedness: false} => Some(1),
+            Int{width: 8,  signedness: true } => Some(1),
+            Int{width: 16, signedness: false} => Some(1),
+            Int{width: 16, signedness: true } => Some(1),
+            Int{width: 32, signedness: false} => Some(1),
+            Int{width: 32, signedness: true } => Some(1),
+            Int{width: 64, signedness: false} => Some(1),
+            Int{width: 64, signedness: true } => Some(1),
+            Int{width: _,  signedness: _    } => None,
+            Float{width: 32} => Some(1),
+            Float{width: 64} => Some(1),
+            Float{width: _ } => None,
+            Vector{ref element_type, ..} => {
+                // FIXME: This seems wrong
+                element_type.occupied_locations()
+            }
+            Matrix{column_count, ref column_type} => 
+                column_type.occupied_locations().map(|size| size * column_count as usize),
+            Array{ref element_type, element_count} =>
+                element_type.occupied_locations().map(|size| size * element_count as usize),
+            RuntimeArray{..} => None,
+            Struct{..} => None,
+            Pointer{ref pointee_type, ..} => pointee_type.occupied_locations(),
+            Image{..} => None,
+            SampledImage{..} => None,
+            Opaque{..} => None,
+            Void{..} => None,
+        }
+    }
+
+    // TODO: Should this be a function on Type or RustType?
+    // TODO: SHould these use the vulkano format types?
+    // TODO: SHould this return result with descriptive errors?
+    pub fn format(&self) -> Option<String> {
+        use self::Type::*;
+        match *self {
+            Bool => None,
+            Int{width: 8,  signedness: false} => Some("R8Uint".to_string()),
+            Int{width: 8,  signedness: true } => Some("R8Sint".to_string()),
+            Int{width: 16, signedness: false} => Some("R16Uint".to_string()),
+            Int{width: 16, signedness: true } => Some("R16Sint".to_string()),
+            Int{width: 32, signedness: false} => Some("R32Uint".to_string()),
+            Int{width: 32, signedness: true } => Some("R32Sint".to_string()),
+            Int{width: 64, signedness: false} => Some("R64Uint".to_string()),
+            Int{width: 64, signedness: true } => Some("R64Sint".to_string()),
+            Int{width: _,  signedness: _    } => None,
+            Float{width: 32} => Some("R32Sfloat".to_string()),
+            Float{width: 64} => Some("R64Sfloat".to_string()),
+            Float{width: _ } => None,
+            Vector{element_count, ref element_type} => {
+                let element_format =  if let Some(element_format) = element_type.format() {
+                    element_format
+                } else {
+                    return None;
+                };
+                if !element_format.starts_with("R32") {
+                    // TODO: Why do we give up here?
+                    return None;
+                }
+                let element_occupied_locations = element_type.occupied_locations();
+                if element_occupied_locations != Some(1) {
+                    // TODO: Why do we give up here?
+                    return None;
+                }
+                match element_count {
+                    1 => Some(element_format),
+                    2 => Some(format!("R32G32{}", &element_format[3..])),
+                    3 => Some(format!("R32G32B32{}", &element_format[3..])),
+                    4 => Some(format!("R32G32B32A32{}", &element_format[3..])),
+                    _ => None,
+                }
+            }
+            Matrix{ref column_type, ..} => {
+                column_type.format()
+            }
+            Array{ref element_type, ..} => {
+                element_type.format()
+            }
+            RuntimeArray{..} => None,
+            Struct{..} => None,
+            // TODO: This seems wrong, why is the format of a pointer the same
+            //       as the format of the pointee?
+            Pointer{ref pointee_type, ..} => pointee_type.format(),
+            Image{..} => None,
+            SampledImage{..} => None,
+            Opaque{..} => None,
+            Void{..} => None,
+        }
+    }
+
     pub fn rust_type(&self) -> Option<RustType> {
         use self::Type::*;
         match *self {
@@ -128,6 +238,11 @@ impl Type {
                         */
                     })
             }
+            Pointer{..} => None,
+            Image{..} => None,
+            SampledImage{..} => None,
+            Opaque{..} => None,
+            Void{..} => None,
         }
     }
 }
@@ -176,6 +291,41 @@ pub fn extract_types(
                 let name = names.get(&result_id).expect("could not find struct name").clone();
                 (result_id, IncompleteType::Struct{name, member_types: member_types.clone()})
             }
+            Instruction::TypePointer{result_id, storage_class, type_id} => {
+                (result_id, IncompleteType::Pointer{storage_class, pointee_type: type_id})
+            }
+            Instruction::TypeSampledImage{result_id, image_type_id} => {
+                (result_id, IncompleteType::SampledImage{image_type: image_type_id})
+            }
+            Instruction::TypeImage{
+                result_id,
+                sampled_type_id,
+                dim,
+                depth,
+                arrayed,
+                ms,
+                sampled,
+                format,
+                access,
+            } => {
+                let image_type = IncompleteType::Image{
+                    access_qualifier: access,
+                    sampled_type: sampled_type_id,
+                    dim,
+                    depth,
+                    arrayed,
+                    ms,
+                    sampled,
+                    format,
+                };
+                (result_id, image_type)
+            }
+            Instruction::TypeVoid{result_id} => {
+                (result_id, IncompleteType::Void)
+            },
+            Instruction::TypeOpaque{result_id, ref name} => {
+                (result_id, IncompleteType::Opaque{name: name.clone()})
+            },
             _ => continue,
         };
         if incomplete_types.contains_key(&result_id) {
@@ -192,6 +342,8 @@ pub fn extract_types(
 
 #[derive(Debug)]
 enum IncompleteType {
+    Void,
+    Opaque{name: String},
     Bool,
     Int{width: u32, signedness: bool},
     Float{width: u32},
@@ -200,6 +352,18 @@ enum IncompleteType {
     Array{element_count: u64, element_type: u32},
     RuntimeArray{element_type: u32},
     Struct{name: String, member_types: Vec<u32>},
+    Pointer{storage_class: StorageClass, pointee_type: u32},
+    SampledImage{image_type: u32},
+    Image{
+        sampled_type:     u32,
+        dim:              Dim,
+        depth:            Option<bool>,
+        arrayed:          bool,
+        ms:               bool,
+        sampled:          Option<bool>,
+        format:           ImageFormat,
+        access_qualifier: Option<AccessQualifier>,
+    },
 }
 
 struct TypeResolver {
@@ -226,6 +390,8 @@ impl TypeResolver {
 
     fn resolve_type(&self, incomplete_type: &IncompleteType) -> Result<Type, u32> {
         Ok(match incomplete_type {
+            &IncompleteType::Void => Type::Void,
+            &IncompleteType::Opaque{ref name} => Type::Opaque{name: name.clone()},
             &IncompleteType::Bool => Type::Bool,
             &IncompleteType::Int{width, signedness} => Type::Int{width, signedness},
             &IncompleteType::Float{width} => Type::Float{width},
@@ -252,7 +418,32 @@ impl TypeResolver {
                     .collect::<Result<Vec<Type>, u32>>()?,
                 member_type_ids: member_types.clone(),
             },
+            &IncompleteType::Pointer{storage_class, pointee_type} => Type::Pointer {
+                pointee_type: Box::new(self.resolve_id(pointee_type)?),
+                storage_class,
+            },
+            &IncompleteType::SampledImage{image_type} => Type::SampledImage {
+                image_type: Box::new(self.resolve_id(image_type)?),
+            },
+            &IncompleteType::Image {
+                access_qualifier,
+                sampled_type,
+                dim,
+                depth,
+                arrayed,
+                ms,
+                sampled,
+                format,
+            } => Type::Image{
+                sampled_type: Box::new(self.resolve_id(sampled_type)?),
+                access_qualifier,
+                dim,
+                depth,
+                arrayed,
+                ms,
+                sampled,
+                format,
+            },
         })
     }
 }
-
