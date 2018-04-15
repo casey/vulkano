@@ -7,9 +7,10 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 
-use parse::{Instruction, Spirv};
-use enums::{Capability, Decoration, StorageClass};
+use descriptor_sets::NewDescriptor;
 use entry_point::{EntryPoint, InterfaceVariable};
+use enums::{Capability, Decoration, StorageClass};
+use parse::{Instruction, Spirv};
 use spec_consts::{SpecializationConstant, SpecializationConstantKind};
 use types::{extract_types, Type};
 
@@ -38,6 +39,9 @@ pub struct Shader {
 
     /// Types described by the shader binary
     pub types: BTreeMap<u32, Type>,
+
+    /// Shader descriptors
+    pub descriptors: Vec<NewDescriptor>,
 }
 
 impl Shader {
@@ -64,6 +68,7 @@ impl Shader {
         let mut member_decorations          = BTreeMap::new();
         let mut variables                   = BTreeMap::new();
         let mut execution_modes             = BTreeMap::new();
+        let mut descriptors                 = Vec::new();
 
         for instruction in &spirv.instructions {
             match instruction {
@@ -92,10 +97,33 @@ impl Shader {
             };
         }
 
-        println!("{:?}", spirv.instructions);
-
         let types = extract_types(&spirv.instructions, &names)
             .expect("failed to extract types");
+
+        for (&(variable_id, decoration), params) in &decorations {
+            if decoration != Decoration::DecorationDescriptorSet {
+                continue;
+            }
+            let descriptor_set = params[0];
+            let &(type_id, storage_class) = variables.get(&variable_id).unwrap();
+            let pointer_type = types.get(&type_id).unwrap().clone();
+            let spirv_type = if let Type::Pointer{pointee_type, ..} = pointer_type {
+                *pointee_type
+            } else {
+                panic!();
+            };
+
+            let name = names.get(&variable_id).unwrap().clone();
+            let binding_point = decorations.get(&(variable_id, Decoration::DecorationBinding))
+                .unwrap()[0];
+            
+            descriptors.push(NewDescriptor {
+                descriptor_set,
+                binding_point,
+                spirv_type,
+                name,
+            });
+        }
 
         let entry_points = spirv.instructions.iter().flat_map(|instruction| {
             if let &Instruction::EntryPoint{ref execution, id, ref name, ref interface} = instruction {
@@ -221,11 +249,12 @@ impl Shader {
         specialization_constants.sort_by_key(|c| c.constant_id);
 
         Shader {
-            specialization_constants,
             capabilities,
             decorations,
+            descriptors,
             entry_points,
             member_decorations,
+            specialization_constants,
             spirv,
             types,
         }

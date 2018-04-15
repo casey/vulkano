@@ -12,19 +12,28 @@ use std::cmp;
 use enums;
 use parse;
 
+use types::Type;
+
+pub struct Descriptor {
+    set:         u32,
+    binding:     u32,
+    desc_ty:     String,
+    array_count: u64,
+    readonly:    bool,
+}
+
+pub struct NewDescriptor {
+    pub descriptor_set: u32,
+    pub binding_point:  u32,
+    pub spirv_type:     Type,
+    pub name:           String,
+}
+
 pub fn write_descriptor_sets(doc: &parse::Spirv) -> String {
     // TODO: not implemented correctly
 
     // Finding all the descriptors.
     let mut descriptors = Vec::new();
-    struct Descriptor {
-        set: u32,
-        binding: u32,
-        desc_ty: String,
-        array_count: u64,
-        readonly: bool,
-    }
-
     // Looping to find all the elements that have the `DescriptorSet` decoration.
     for instruction in doc.instructions.iter() {
         let (variable_id, descriptor_set) = match instruction {
@@ -111,7 +120,7 @@ pub fn write_descriptor_sets(doc: &parse::Spirv) -> String {
                 binding = d.binding,
                 desc_ty = d.desc_ty,
                 array_count = d.array_count,
-                readonly = if d.readonly { "true" } else { "false" }
+                readonly = d.readonly
             )
 
         })
@@ -135,9 +144,7 @@ pub fn write_descriptor_sets(doc: &parse::Spirv) -> String {
     };
 
     // Writing the body of the `num_push_constants_ranges` method.
-    let num_push_constants_ranges_body = {
-        if push_constants_size == 0 { "0" } else { "1" }
-    };
+    let num_push_constants_ranges_body = if push_constants_size == 0 { "0" } else { "1" };
 
     // Writing the body of the `push_constants_range` method.
     let push_constants_range_body = format!(
@@ -229,7 +236,7 @@ fn pointer_variable_ty(doc: &parse::Spirv, variable: u32) -> u32 {
 /// read-only, and the number of array elements.
 ///
 /// See also section 14.5.2 of the Vulkan specs: Descriptor Set Interface
-fn descriptor_infos(doc: &parse::Spirv, pointed_ty: u32, force_combined_image_sampled: bool)
+pub fn descriptor_infos(doc: &parse::Spirv, pointed_ty: u32, force_combined_image_sampled: bool)
                     -> Option<(String, bool, u64)> {
     doc.instructions.iter().filter_map(|i| {
         match i {
