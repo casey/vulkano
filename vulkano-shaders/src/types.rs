@@ -164,6 +164,7 @@ impl Type {
         }
     }
 
+    // TODO: Should this be moved into codegen?
     pub fn rust_type(&self) -> Option<RustType> {
         use self::Type::*;
         match *self {

@@ -15,6 +15,7 @@ pub struct SpecializationConstant {
     pub name:           String,
     pub kind:           SpecializationConstantKind,
     pub spirv_type:     Type,
+    // TODO: Should this be moved into codegen?
     pub rust_type:      RustType,
     pub rust_size:      usize,
 }

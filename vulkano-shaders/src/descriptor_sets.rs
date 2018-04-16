@@ -29,6 +29,20 @@ pub struct NewDescriptor {
     pub name:           String,
 }
 
+// TODO: Ask tomaka about the function of the readonly
+
+/*
+impl NewDescriptor {
+    fn array_count(&self) -> u64 {
+        if let Type::Array{element_count, ..} = self.spirv_type {
+            element_count
+        } else {
+            1
+        }
+    }
+}
+*/
+
 pub fn write_descriptor_sets(doc: &parse::Spirv) -> String {
     // TODO: not implemented correctly
 

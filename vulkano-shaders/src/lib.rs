@@ -352,6 +352,11 @@ fn _is_builtin(doc: &parse::Spirv, id: u32) -> bool {
 mod tests {
     use super::*;
 
+    // TODO: Get more random shaders from the internet and write
+    //       more tests.
+    //
+    // TODO: make sure that generated code actually compiles
+
     #[test]
     fn test_refactor_is_noop() {
         let content = glsl_to_spirv::compile(

@@ -57,10 +57,10 @@ impl Member {
 
 /// Analyzes a single struct, returns a string containing its Rust definition, plus its size.
 fn write_struct(
-    doc: &parse::Spirv,
+    doc:       &parse::Spirv,
     struct_id: u32,
-    members: &[u32],
-    name: &str
+    members:   &[u32],
+    name:      &str
 ) -> (String, Option<usize>) {
     // The members of this struct.
     let mut rust_members = Vec::with_capacity(members.len());
