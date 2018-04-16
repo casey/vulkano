@@ -81,11 +81,11 @@ impl Shader {
                     }
                     names.insert(target_id, name.clone());
                 }
-                &Instruction::MemberDecorate{target_id, member, decoration, ref params} => {
-                    member_decorations.insert((target_id, member, decoration), params.clone());
-                }
                 &Instruction::Decorate{target_id, decoration, ref params} => {
                     decorations.insert((target_id, decoration), params.clone());
+                }
+                &Instruction::MemberDecorate{target_id, member, decoration, ref params} => {
+                    member_decorations.insert((target_id, member, decoration), params.clone());
                 }
                 &Instruction::Variable{result_type_id, result_id, storage_class, .. } => {
                     variables.insert(result_id, (result_type_id, storage_class));
@@ -116,12 +116,21 @@ impl Shader {
             let name = names.get(&variable_id).unwrap().clone();
             let binding_point = decorations.get(&(variable_id, Decoration::DecorationBinding))
                 .unwrap()[0];
+
+            let is_ssbo = if decorations.contains_key(&(variable_id, Decoration::DecorationBufferBlock)) {
+                Some(true)
+            } else if decorations.contains_key(&(variable_id, Decoration::DecorationBlock)) {
+                Some(false)
+            } else {
+                None
+            };
             
             descriptors.push(NewDescriptor {
-                descriptor_set,
                 binding_point,
-                spirv_type,
+                descriptor_set,
+                is_ssbo,
                 name,
+                spirv_type,
             });
         }
 

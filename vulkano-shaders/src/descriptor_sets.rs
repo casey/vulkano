@@ -26,6 +26,9 @@ pub struct NewDescriptor {
     pub descriptor_set: u32,
     pub binding_point:  u32,
     pub spirv_type:     Type,
+    // FIXME: This only applies if spirv_type is a struct. Can
+    //        this be cleaned up so we avoid the awkward Option<bool>?
+    pub is_ssbo:        Option<bool>,
     pub name:           String,
 }
 
@@ -39,6 +42,10 @@ impl NewDescriptor {
         } else {
             1
         }
+    }
+
+    fn read_only(&self) -> bool {
+        true for everything, except things that aren't yet implemented
     }
 }
 */
