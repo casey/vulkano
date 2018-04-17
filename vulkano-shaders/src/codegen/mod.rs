@@ -8,3 +8,4 @@ pub fn capitalize(s: &str) -> String {
 
 pub mod specialization_constants;
 pub mod entry_points;
+pub mod descriptor_sets;

@@ -42,6 +42,9 @@ pub struct Shader {
 
     /// Shader descriptors
     pub descriptors: Vec<NewDescriptor>,
+
+    /// Shader push constants
+    pub push_constants: Vec<Type>,
 }
 
 impl Shader {
@@ -69,6 +72,7 @@ impl Shader {
         let mut variables                   = BTreeMap::new();
         let mut execution_modes             = BTreeMap::new();
         let mut descriptors                 = Vec::new();
+        let mut push_constants              = Vec::new();
 
         for instruction in &spirv.instructions {
             match instruction {
@@ -97,15 +101,24 @@ impl Shader {
             };
         }
 
-        let types = extract_types(&spirv.instructions, &names)
+        let types = extract_types(&spirv.instructions, &names, &decorations)
             .expect("failed to extract types");
+
+        for spirv_type in types.values() {
+            if let Type::Pointer{
+                storage_class: StorageClass::StorageClassPushConstant,
+                ref            pointee_type,
+            } = *spirv_type {
+                push_constants.push(*pointee_type.clone());
+            }
+        }
 
         for (&(variable_id, decoration), params) in &decorations {
             if decoration != Decoration::DecorationDescriptorSet {
                 continue;
             }
             let descriptor_set = params[0];
-            let &(type_id, storage_class) = variables.get(&variable_id).unwrap();
+            let &(type_id, _) = variables.get(&variable_id).unwrap();
             let pointer_type = types.get(&type_id).unwrap().clone();
             let spirv_type = if let Type::Pointer{pointee_type, ..} = pointer_type {
                 *pointee_type
@@ -117,20 +130,12 @@ impl Shader {
             let binding_point = decorations.get(&(variable_id, Decoration::DecorationBinding))
                 .unwrap()[0];
 
-            let is_ssbo = if decorations.contains_key(&(variable_id, Decoration::DecorationBufferBlock)) {
-                Some(true)
-            } else if decorations.contains_key(&(variable_id, Decoration::DecorationBlock)) {
-                Some(false)
-            } else {
-                None
-            };
-            
             descriptors.push(NewDescriptor {
                 binding_point,
                 descriptor_set,
-                is_ssbo,
                 name,
                 spirv_type,
+                type_id,
             });
         }
 
@@ -263,6 +268,7 @@ impl Shader {
             descriptors,
             entry_points,
             member_decorations,
+            push_constants,
             specialization_constants,
             spirv,
             types,

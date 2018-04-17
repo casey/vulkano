@@ -10,7 +10,7 @@
 use parse::Instruction;
 use std::collections::BTreeMap;
 use std::mem;
-use enums::{StorageClass, Dim, ImageFormat, AccessQualifier};
+use enums::{StorageClass, Dim, ImageFormat, AccessQualifier, Decoration};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
@@ -23,9 +23,15 @@ pub enum Type {
     Matrix{column_count: u32, column_type: Box<Type>},
     Array{element_count: u64, element_type: Box<Type>},
     RuntimeArray{element_type: Box<Type>},
-    Struct{name: String, member_types: Vec<Type>, member_type_ids: Vec<u32>},
+    Struct{
+        name:            String,
+        member_types:    Vec<Type>,
+        member_type_ids: Vec<u32>,
+        interface_block: Option<InterfaceBlock>,
+    },
     Pointer{storage_class: StorageClass, pointee_type: Box<Type>},
     SampledImage{image_type: Box<Type>},
+    Sampler,
     Image{
         sampled_type:      Box<Type>,
         dim:               Dim,
@@ -36,6 +42,12 @@ pub enum Type {
         format:            ImageFormat,
         access_qualifier:  Option<AccessQualifier>,
     },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InterfaceBlock {
+    Block,
+    BufferBlock,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -97,6 +109,7 @@ impl Type {
             Pointer{ref pointee_type, ..} => pointee_type.occupied_locations(),
             Image{..} => None,
             SampledImage{..} => None,
+            Sampler => None,
             Opaque{..} => None,
             Void{..} => None,
         }
@@ -159,6 +172,7 @@ impl Type {
             Pointer{ref pointee_type, ..} => pointee_type.format(),
             Image{..} => None,
             SampledImage{..} => None,
+            Sampler => None,
             Opaque{..} => None,
             Void{..} => None,
         }
@@ -223,7 +237,7 @@ impl Type {
                     alignment: alignment,
                 })
             }
-            Struct{name: ref _name, ref member_types, member_type_ids: ref _member_type_ids} => {
+            Struct{name: ref _name, ref member_types, member_type_ids: ref _member_type_ids, interface_block: _interface_block} => {
                 member_types.iter()
                     .map(|ty| ty.rust_type())
                     // If any of the member types has no rust type, this collect will
@@ -246,6 +260,7 @@ impl Type {
             Pointer{..} => None,
             Image{..} => None,
             SampledImage{..} => None,
+            Sampler => None,
             Opaque{..} => None,
             Void{..} => None,
         }
@@ -254,7 +269,8 @@ impl Type {
 
 pub fn extract_types(
     instructions: &[Instruction],
-    names: &BTreeMap<u32, String>,
+    names:        &BTreeMap<u32, String>,
+    decorations:  &BTreeMap<(u32, Decoration), Vec<u32>>,
 ) -> Result<BTreeMap<u32, Type>, u32> {
     let constants = instructions.iter().filter_map(|instruction| {
         if let Instruction::Constant{result_id, ref data, ..} = *instruction {
@@ -294,13 +310,29 @@ pub fn extract_types(
                 (result_id, IncompleteType::RuntimeArray{element_type: type_id}),
             Instruction::TypeStruct{result_id, ref member_types} => {
                 let name = names.get(&result_id).expect("could not find struct name").clone();
-                (result_id, IncompleteType::Struct{name, member_types: member_types.clone()})
+
+                use enums::Decoration::{DecorationBlock, DecorationBufferBlock};
+                let interface_block = if decorations.contains_key(&(result_id, DecorationBlock)) {
+                    Some(InterfaceBlock::Block)
+                } else if decorations.contains_key(&(result_id, DecorationBufferBlock)) {
+                    Some(InterfaceBlock::BufferBlock)
+                } else {
+                    None
+                };
+
+                (
+                    result_id,
+                    IncompleteType::Struct{name, member_types: member_types.clone(), interface_block},
+                )
             }
             Instruction::TypePointer{result_id, storage_class, type_id} => {
                 (result_id, IncompleteType::Pointer{storage_class, pointee_type: type_id})
             }
             Instruction::TypeSampledImage{result_id, image_type_id} => {
                 (result_id, IncompleteType::SampledImage{image_type: image_type_id})
+            }
+            Instruction::TypeSampler{result_id} => {
+                (result_id, IncompleteType::Sampler)
             }
             Instruction::TypeImage{
                 result_id,
@@ -356,9 +388,10 @@ enum IncompleteType {
     Matrix{column_count: u32, column_type: u32},
     Array{element_count: u64, element_type: u32},
     RuntimeArray{element_type: u32},
-    Struct{name: String, member_types: Vec<u32>},
+    Struct{name: String, member_types: Vec<u32>, interface_block: Option<InterfaceBlock>},
     Pointer{storage_class: StorageClass, pointee_type: u32},
     SampledImage{image_type: u32},
+    Sampler,
     Image{
         sampled_type:     u32,
         dim:              Dim,
@@ -415,13 +448,14 @@ impl TypeResolver {
             &IncompleteType::RuntimeArray{element_type} => Type::RuntimeArray {
                 element_type: Box::new(self.resolve_id(element_type)?),
             },
-            &IncompleteType::Struct{ref name, ref member_types} => Type::Struct {
+            &IncompleteType::Struct{ref name, ref member_types, interface_block} => Type::Struct {
                 name:         name.clone(),
                 member_types: member_types
                     .iter()
                     .map(|type_id| self.resolve_id(*type_id))
                     .collect::<Result<Vec<Type>, u32>>()?,
                 member_type_ids: member_types.clone(),
+                interface_block,
             },
             &IncompleteType::Pointer{storage_class, pointee_type} => Type::Pointer {
                 pointee_type: Box::new(self.resolve_id(pointee_type)?),
@@ -430,6 +464,7 @@ impl TypeResolver {
             &IncompleteType::SampledImage{image_type} => Type::SampledImage {
                 image_type: Box::new(self.resolve_id(image_type)?),
             },
+            &IncompleteType::Sampler => Type::Sampler,
             &IncompleteType::Image {
                 access_qualifier,
                 sampled_type,

@@ -211,7 +211,7 @@ impl {name} {{
         output.push_str("}");
 
         // descriptor sets
-        output.push_str(&descriptor_sets::write_descriptor_sets(&shader.spirv));
+        codegen::descriptor_sets::write(&shader.descriptors, &shader.push_constants, &mut output)?;
 
         codegen::specialization_constants::write(&shader.specialization_constants, &mut output)?;
     }
