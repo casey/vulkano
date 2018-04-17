@@ -7,7 +7,7 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 
-use descriptor_sets::NewDescriptor;
+use descriptor_sets::Descriptor;
 use entry_point::{EntryPoint, InterfaceVariable};
 use enums::{Capability, Decoration, StorageClass};
 use parse::{Instruction, Spirv};
@@ -41,7 +41,7 @@ pub struct Shader {
     pub types: BTreeMap<u32, Type>,
 
     /// Shader descriptors
-    pub descriptors: Vec<NewDescriptor>,
+    pub descriptors: Vec<Descriptor>,
 
     /// Shader push constants
     pub push_constants: Vec<Type>,
@@ -130,12 +130,11 @@ impl Shader {
             let binding_point = decorations.get(&(variable_id, Decoration::DecorationBinding))
                 .unwrap()[0];
 
-            descriptors.push(NewDescriptor {
+            descriptors.push(Descriptor {
                 binding_point,
                 descriptor_set,
                 name,
                 spirv_type,
-                type_id,
             });
         }
 

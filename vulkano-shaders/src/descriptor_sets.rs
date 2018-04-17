@@ -9,11 +9,9 @@
 
 use types::Type;
 
-pub struct NewDescriptor {
+pub struct Descriptor {
     pub descriptor_set: u32,
     pub binding_point:  u32,
     pub spirv_type:     Type,
     pub name:           String,
-    // FIXME: delet this
-    pub type_id:        u32,
 }

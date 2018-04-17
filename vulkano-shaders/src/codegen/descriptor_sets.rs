@@ -3,7 +3,7 @@ use std::cmp;
 use enums;
 use fmt;
 
-use descriptor_sets::NewDescriptor;
+use descriptor_sets::Descriptor;
 use types::{Type, InterfaceBlock};
 
 pub fn descriptor_array_count(spirv_type: &Type) -> u64 {
@@ -21,7 +21,7 @@ fn descriptor_read_only(_spirv_type: &Type) -> bool {
 }
 
 pub fn write(
-    descriptors:    &[NewDescriptor],
+    descriptors:    &[Descriptor],
     push_constants: &[Type],
     destination:    &mut fmt::Write,
 ) -> fmt::Result {
