@@ -6,51 +6,26 @@ use fmt;
 use descriptor_sets::NewDescriptor;
 use types::{Type, InterfaceBlock};
 
-pub struct Descriptor {
-    pub set:         u32,
-    pub binding:     u32,
-    pub desc_ty:     String,
-    pub array_count: u64,
-    pub readonly:    bool,
+pub fn descriptor_array_count(spirv_type: &Type) -> u64 {
+    if let Type::Array{element_count, ..} = *spirv_type {
+        element_count
+    } else {
+        1
+    }
 }
 
-impl NewDescriptor {
-    pub fn array_count(&self) -> u64 {
-        if let Type::Array{element_count, ..} = self.spirv_type {
-            element_count
-        } else {
-            1
-        }
-    }
-
-    fn read_only(&self) -> bool {
-        // TODO: Ask tomaka about the function of the readonly
-        // FIXME: this is wrong
-        true
-    }
+fn descriptor_read_only(_spirv_type: &Type) -> bool {
+    // TODO: Ask tomaka about the function of the readonly
+    // FIXME: this is wrong
+    true
 }
 
 pub fn write(
-    new_descriptors: &[NewDescriptor],
-    push_constants:  &[Type],
-    destination:     &mut fmt::Write,
+    descriptors:    &[NewDescriptor],
+    push_constants: &[Type],
+    destination:    &mut fmt::Write,
 ) -> fmt::Result {
     // TODO: not implemented correctly
-
-    // Finding all the descriptors.
-    let mut descriptors = Vec::new();
-
-    for new_descriptor in new_descriptors {
-        let constructor =
-            descriptor_constructor(&new_descriptor.spirv_type, false);
-        descriptors.push(Descriptor {
-            desc_ty:     constructor,
-            set:         new_descriptor.descriptor_set,
-            binding:     new_descriptor.binding_point,
-            array_count: new_descriptor.array_count(),
-            readonly:    new_descriptor.read_only(),
-        });
-    }
 
     let push_constants_size = push_constants.iter().map(|push_constant_type| {
         push_constant_type.rust_type()
@@ -70,18 +45,17 @@ pub fn write(
             stages: self.0.clone(),
             readonly: {readonly},
         }}),",
-                set = d.set,
-                binding = d.binding,
-                desc_ty = d.desc_ty,
-                array_count = d.array_count,
-                readonly = d.readonly
+                set = d.descriptor_set,
+                binding = d.binding_point,
+                desc_ty = descriptor_constructor(&d.spirv_type, false),
+                array_count = descriptor_array_count(&d.spirv_type),
+                readonly = descriptor_read_only(&d.spirv_type),
             )
-
         })
         .collect::<Vec<_>>()
         .concat();
 
-    let num_sets = descriptors.iter().fold(0, |s, d| cmp::max(s, d.set + 1));
+    let num_sets = descriptors.iter().fold(0, |s, d| cmp::max(s, d.descriptor_set + 1));
 
     // Writing the body of the `num_bindings_in_set` method.
     let num_bindings_in_set_body = {
@@ -89,8 +63,8 @@ pub fn write(
             .map(|set| {
                      let num = descriptors
                          .iter()
-                         .filter(|d| d.set == set)
-                         .fold(0, |s, d| cmp::max(s, 1 + d.binding));
+                         .filter(|d| d.descriptor_set == set)
+                         .fold(0, |s, d| cmp::max(s, 1 + d.binding_point));
                      format!("{set} => Some({num}),", set = set, num = num)
                  })
             .collect::<Vec<_>>()
